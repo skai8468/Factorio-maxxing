@@ -9,5 +9,6 @@
   "max_steps": 32,
   "history_length": 16,
   "environment": "mock",
-  "trajectory_dir": "trajectories"
+  "trajectory_dir": "trajectories",
+  "api_reference": ""
 }

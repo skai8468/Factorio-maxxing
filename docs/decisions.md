@@ -592,3 +592,30 @@ conditional (D5).
 **Consequence.** Both `ANTHROPIC_API_KEY` and, for an identity-linked key,
 `ANTHROPIC_WORKSPACE_ID` must be in the environment. Neither is ever read from a config
 file.
+
+---
+
+## D28 - The environment API is supplied to the policy, not hard-coded
+
+**Decision.** `context.build` takes an `api_reference` string and renders it as an
+`ENVIRONMENT API` section, first in the prompt. `run.py` reads it from a file named by
+the new `api_reference` config key. Empty is allowed and renders nothing. The file's
+contents are not authored yet.
+
+**Why.** The first live call showed a policy model inventing an API - `game.scan(...)`,
+`game.insert(...)`, `game.get_inventory()` - because the prompt asked for Python without
+saying which functions exist. FLE's `GymAgent` puts its API surface in the prompt; ours
+did not.
+
+Supplied rather than hard-coded because the authority on that surface is the
+environment, not this module: a reference written from memory would be a fabrication
+carrying the harness's authority, and every resulting failure would read as model
+incapability rather than a harness defect. It renders first because it is the most
+stable content across a goal, which is also the right position should prompt caching be
+used later.
+
+**Consequence.** `api_reference` is a twelfth config key; build-plan section 12 lists
+eleven and predates this. The M0/M1 offline work is unaffected - the mock ignores
+submitted code (D10) - but a live run before the reference exists would fail on every
+policy. `docs/fle-integration.md` records what must be captured from the installed
+source and why it must not be written from memory.

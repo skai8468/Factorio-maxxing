@@ -20,6 +20,7 @@ from factorio_maxxing.run import (
     build_human,
     build_parser,
     build_verifier,
+    load_api_reference,
     load_config,
     load_hints,
     main,
@@ -301,3 +302,29 @@ def test_replay_coverage_is_reported_at_end_of_run(tmp_path, caplog):
 def test_goal_notes_reach_the_goal(tmp_path, capsys):
     main([*SMOKE_ARGS, "--notes", "ore is north", "--trajectory-dir", str(tmp_path)])
     assert "completed:     True" in capsys.readouterr().out
+
+
+def test_an_api_reference_file_is_loaded(tmp_path):
+    path = tmp_path / "api.md"
+    path.write_text("place_entity(name, position)", encoding="utf-8")
+    assert load_api_reference(Config(api_reference=str(path))) == (
+        "place_entity(name, position)"
+    )
+
+
+def test_no_api_reference_configured_means_empty():
+    assert load_api_reference(Config()) == ""
+
+
+def test_a_missing_api_reference_file_exits_cleanly(tmp_path, capsys):
+    exit_code = main(
+        [
+            *SMOKE_ARGS,
+            "--api-reference",
+            str(tmp_path / "missing.md"),
+            "--trajectory-dir",
+            str(tmp_path),
+        ]
+    )
+    assert exit_code == 2
+    assert "error:" in capsys.readouterr().err

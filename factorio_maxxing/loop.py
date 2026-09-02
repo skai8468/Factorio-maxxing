@@ -60,6 +60,7 @@ def run_goal(
     detector: StuckDetector,
     recorder: TrajectoryRecorder,
     *,
+    api_reference: str = "",
     verification_interval: int = 1,
     history_length: int = context.HISTORY_WINDOW,
     verification_window: int = VERIFICATION_WINDOW,
@@ -101,6 +102,7 @@ def run_goal(
             history,
             guidance,
             _latest_errors(errors),
+            api_reference=api_reference,
             history_length=history_length,
         )
         response = policy_client.generate(prompt)

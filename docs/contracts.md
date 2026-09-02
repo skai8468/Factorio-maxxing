@@ -121,7 +121,8 @@ a model.
 ## `context.py`
 
 ```python
-def build(goal, rendered_observation, history, guidance, errors) -> str: ...
+def build(goal, rendered_observation, history, guidance, errors,
+          *, api_reference="", history_length=16) -> str: ...
 ```
 
 `guidance` is a **list** that accumulates across the goal, rendered as a labelled
@@ -183,8 +184,16 @@ field only — it never replaces raw text and never affects control flow.
   "max_steps": 32,
   "history_length": 16,
   "environment": "mock",
-  "trajectory_dir": "trajectories"
+  "trajectory_dir": "trajectories",
+  "api_reference": ""
 }
 ```
 
-API keys come from environment variables, never this file.
+API keys come from environment variables, never this file. For an identity-linked API
+key, `ANTHROPIC_WORKSPACE_ID` must be set alongside the key (`decisions.md` D27).
+
+`api_reference` is a path to a file describing the functions the environment provides,
+rendered to the policy as an `ENVIRONMENT API` section. Empty means the policy is told
+nothing about the API - correct against the mock, which ignores submitted code, and
+wrong against live Factorio (`decisions.md` D28). Added after build-plan section 12 was
+written; that section lists the other eleven keys.

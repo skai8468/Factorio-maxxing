@@ -156,3 +156,30 @@ def test_build_is_deterministic():
     args = (GOAL, OBSERVATION)
     kwargs = {"history": [("x = 1", "obs")], "guidance": ["hint"], "errors": ["err"]}
     assert build(*args, **kwargs) == build(*args, **kwargs)
+
+
+def test_no_api_section_without_a_reference():
+    assert "ENVIRONMENT API" not in build(GOAL, OBSERVATION)
+
+
+def test_a_blank_api_reference_renders_nothing():
+    blank = "   " + chr(10) + "  "
+    assert "ENVIRONMENT API" not in build(GOAL, OBSERVATION, api_reference=blank)
+
+
+def test_the_api_reference_is_rendered_verbatim():
+    reference = "place_entity(name, position)" + chr(10) + "insert_item(item, target)"
+    prompt = build(GOAL, OBSERVATION, api_reference=reference)
+    assert "  place_entity(name, position)" in prompt
+    assert "  insert_item(item, target)" in prompt
+
+
+def test_the_api_reference_comes_first():
+    """Most stable content across a goal, so it heads the prompt."""
+    prompt = build(GOAL, OBSERVATION, api_reference="place_entity(name)")
+    assert headers(prompt) == [
+        "ENVIRONMENT API",
+        "GOAL",
+        "CURRENT OBSERVATION",
+        "INSTRUCTIONS",
+    ]

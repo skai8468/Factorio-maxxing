@@ -30,6 +30,7 @@ def build(
     guidance: Sequence[str] = (),
     errors: Sequence[str] = (),
     *,
+    api_reference: str = "",
     history_length: int = HISTORY_WINDOW,
 ) -> str:
     """Assemble the policy prompt.
@@ -42,8 +43,16 @@ def build(
     Empty history, guidance and errors sections are omitted rather than rendered as
     placeholders - absent context should cost no tokens - while GOAL, CURRENT
     OBSERVATION and INSTRUCTIONS are always present.
+
+    ``api_reference`` describes the functions the environment actually provides. Without
+    it a policy model invents a plausible API and every call fails; it is passed in
+    rather than hard-coded because the authority on that surface is the environment,
+    not this module. It renders first, being the most stable content across a goal.
     """
-    blocks = [_goal_block(goal)]
+    blocks = []
+    if api_reference.strip():
+        blocks.append(_section("ENVIRONMENT API", api_reference.splitlines()))
+    blocks.append(_goal_block(goal))
 
     if history:
         blocks.append(_history_block(history, history_length))

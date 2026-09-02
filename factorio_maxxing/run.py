@@ -102,6 +102,9 @@ class Config:
     history_length: int = 16
     environment: str = "mock"
     trajectory_dir: str = "trajectories"
+    api_reference: str = ""
+    """Path to a file describing the functions the environment provides. Empty
+    means the policy is told nothing about the API and will invent one."""
 
 
 def load_config(path: Path | str) -> dict[str, Any]:
@@ -166,6 +169,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stuck-threshold", type=int)
     parser.add_argument("--history-length", type=int)
     parser.add_argument("--trajectory-dir")
+    parser.add_argument(
+        "--api-reference", help="file describing the environment API for the policy"
+    )
     return parser
 
 
@@ -187,6 +193,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "stuck_threshold": args.stuck_threshold,
         "history_length": args.history_length,
         "trajectory_dir": args.trajectory_dir,
+        "api_reference": args.api_reference,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
@@ -231,6 +238,17 @@ def build_human(config: Config, hints_path: str | None):
     raise ConfigError(f"unknown human backend: {config.human}")
 
 
+def load_api_reference(config: Config) -> str:
+    """Read the environment API description handed to the policy.
+
+    Empty is allowed and means the policy is told nothing about the API - correct
+    against the mock, which ignores submitted code, and wrong against live Factorio.
+    """
+    if not config.api_reference:
+        return ""
+    return Path(config.api_reference).read_text(encoding="utf-8")
+
+
 def build_detector(config: Config):
     if config.stuck_detector != DEFAULT_DETECTOR:
         raise ConfigError(
@@ -252,6 +270,7 @@ def main(argv: list[str] | None = None) -> int:
         verifier = build_verifier(config)
         human = build_human(config, args.hints)
         detector = build_detector(config)
+        api_reference = load_api_reference(config)
     except (ConfigError, ValueError, OSError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -268,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
             human,
             detector,
             recorder,
+            api_reference=api_reference,
             verification_interval=config.verification_interval,
             history_length=config.history_length,
             max_interventions=config.max_interventions_without_progress,

@@ -309,3 +309,17 @@ def test_the_loop_submits_the_extracted_policy_to_the_environment(recorder):
     env = make_env()
     run(recorder, env=env, verifier=StubVerifier([DONE]))
     assert env.submitted_actions[0].code == "place_entity()"
+
+
+def test_the_api_reference_reaches_every_policy_prompt(recorder):
+    """Finding from the first live run: without it the model invents an API."""
+    client = StubLLMClient([POLICY])
+    run(recorder, client=client, api_reference="place_entity(name, position)")
+    assert all("ENVIRONMENT API" in prompt for prompt in client.prompts)
+    assert all("place_entity(name, position)" in prompt for prompt in client.prompts)
+
+
+def test_no_api_section_when_none_is_configured(recorder):
+    client = StubLLMClient([POLICY])
+    run(recorder, client=client)
+    assert all("ENVIRONMENT API" not in prompt for prompt in client.prompts)

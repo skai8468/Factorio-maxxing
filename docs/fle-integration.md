@@ -189,3 +189,36 @@ if no research is active when called with no argument.
 
 Submission format: a JSON file in `docs/leaderboard/results/`, via PR.
 No 2026-generation model has published FLE results.
+
+---
+
+## Policy API reference - NOT YET RECORDED (blocks Phase 5 item 18)
+
+The harness renders an `ENVIRONMENT API` section into the policy prompt from a file
+named by the `api_reference` config key. **That file does not exist yet, and its
+contents cannot be written from this document.**
+
+Evidence it is needed: on the first live call (Haiku 4.5, mock environment, 2026-09-03)
+the policy model invented an API - `game.scan(radius=10)`,
+`game.insert('burner-mining-drill', 'coal', 2)`, `game.get_inventory()`. None of those
+exist. The prompt told it to emit Python and never said which functions were callable,
+so it produced something plausible. Against the mock this is invisible, because the mock
+ignores submitted code by design (D10); against live Factorio every policy would fail on
+its first call.
+
+**What to record here once FLE is installed**, and only from the installed source:
+
+- the callable surface under `fle/env/tools/agent/` - one line per tool, with signature
+  and return type;
+- how those names enter the namespace a policy executes in;
+- what `GYM_AGENT_INSTRUCTIONS` tells the model about the API, so our reference stays
+  comparable to the published baseline without copying its wording (D1);
+- any import or setup a policy must perform before calling them.
+
+Then write the reference to a file, point `api_reference` at it, and confirm against a
+live run that policies stop inventing calls.
+
+Do not author this section from memory or from a web search. A wrong API reference is
+worse than none: it would teach the model incorrect calls with the harness's authority
+behind them, and the resulting failures would look like model incapability in the
+results.
