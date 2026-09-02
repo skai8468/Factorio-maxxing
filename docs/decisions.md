@@ -291,3 +291,28 @@ the one available signal separating bare Python from prose.
 
 **Consequence.** An empty policy is a legitimate recorded value. `loop.py` and
 `trajectory.py` must both treat `""` as data, not as a missing field.
+
+---
+
+## D18 — Prompt section order, and the policy instructions live in `context.py`
+
+**Decision.** `build` emits GOAL, RECENT HISTORY, EXECUTION ERRORS, CURRENT OBSERVATION,
+HUMAN GUIDANCE, INSTRUCTIONS, in that order. History, errors and guidance sections are
+omitted entirely when empty; GOAL, CURRENT OBSERVATION and INSTRUCTIONS are always
+present. History steps are numbered from zero, matching the loop and the trajectory.
+The policy instruction text is a module constant, `POLICY_INSTRUCTIONS`.
+
+**Why.** HUMAN GUIDANCE sits last before the instructions because it is the object of
+study: if guidance is buried above sixteen steps of history, a null result becomes
+impossible to attribute between "the human's hint was useless" and "the model never
+really saw it". Absent context is omitted rather than rendered as `(none)` because an
+empty section is not information - this differs from `rendering.py`, where a stable
+section skeleton across steps is the point.
+
+The instructions are structurally comparable to FLE's `GYM_AGENT_INSTRUCTIONS` - a
+planning stage, then one fenced Python block, with a 50-line guideline and a
+do-not-repeat reminder - but the wording is ours, not copied from FLE.
+
+**Consequence.** `history_length` is a keyword argument, so the history window is
+already a sweepable experiment parameter (build-plan section 18) without editing the
+module.
