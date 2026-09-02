@@ -444,3 +444,45 @@ schema-validation layer. It is one discriminator field.
 
 **Scope note.** No trajectories existed when this was decided, so nothing needed
 migrating.
+
+---
+
+## D23 — Loop control flow: declined help is recorded, and the intervention cap is hard
+
+**Decision (research lead approved).**
+
+1. A request for help is recorded as an `intervention` record whether or not it is
+   answered. A declined request carries `text: null` and `intervention_index: null`.
+   Interventions are counted as records whose `text` is not null.
+2. `interventions` does not reset and aborts the goal on reaching `max_interventions`
+   (default 3) - at most that many interventions per goal.
+3. The loop does not call `ScriptedHuman.log_usage()`; `run.py` does it at end of run,
+   keeping the loop backend-agnostic.
+4. History pairs a policy with the observation that *followed* it, and is appended
+   before stuck detection rather than at the end of the iteration.
+5. Execution errors are read from the `error` and `stderr` observation keys.
+6. The prompt's EXECUTION ERRORS section shows only the most recent step's errors.
+
+**Why.**
+
+Recording declined requests preserves the baseline half of the M1 comparison. Under
+`NoHuman` the detector still fires; if nothing were recorded, the trajectory would show
+no evidence the harness ever detected stuckness, and "how often would help have been
+requested" - the question `NoHuman` exists to answer - would be unanswerable from the
+data. Counting only answered requests keeps `NoHuman` at zero interventions.
+
+Build-plan section 8a says `interventions_without_progress` "is not reset", and no
+progress signal is defined at M0/M1, so the counter is a hard cap on interventions per
+goal. The name anticipates a progress signal that current scope does not have; should
+one arrive, this is where it attaches.
+
+Section 11's pseudocode appends the *pre-step* rendering to history, which would show
+each policy beside the state before it ran. `context.py` labels these "step N policy"
+and "step N result", and the result is the informative half. Appending before stuck
+detection also keeps history, verifications, errors and flows advancing on the same
+clock, so one set of window marks resets all four (D20).
+
+**Consequence.** `_record_verifier_usage` reads `last_response` by attribute rather
+than by type, so any verifier that makes a model call gets its usage recorded and one
+that makes none writes no `llm_call` record (D22). This is backend-agnostic, not
+model-specific branching.
