@@ -511,3 +511,28 @@ answer, and half of the M1 result (D8, D13).
 **Consequence.** Request counts are comparable across human backends over an identical
 goal set. `interventions` still counts answered requests only, so `NoHuman` reports zero
 interventions while its stuck events remain visible in the trajectory.
+
+---
+
+## D25 — CLI: strict config, refusals that name their phase, demo fixtures in `run.py`
+
+**Decision.** `run.py` merges defaults, then a config file, then command-line overrides.
+Unknown config keys are rejected rather than ignored. A non-`stub` model or
+`--live` is refused with an error naming the build-order item that will provide it
+(Phase 4 item 15, Phase 5 item 17). The mock environment's frames, the stub policy
+responses and the stub verdicts used by the offline smoke run live in `run.py` as
+`DEMO_*` constants. `run.py` calls `ScriptedHuman.log_usage()` at end of run (D23).
+
+**Why.** Silently ignoring `max_stpes` would run 32 steps while the operator believed
+they had asked for 8, and the trajectory would record the run as configured correctly -
+a data-integrity problem, not a usability one. Refusals name their phase so an operator
+who tries `--live` learns when it arrives rather than that it is broken.
+
+The `DEMO_*` fixtures are the smoke run's script. They belong to the CLI rather than to
+`envs.py`, which must stay a general fixture holder, and they are explicitly a
+demonstration: three scripted frames in which a drill is placed, fuelled and starts
+working. They exercise the loop and simulate nothing (D10).
+
+**Consequence.** A failed goal exits 0. Failure is a legitimate research result -
+build-plan section 25 expects goal 5 to fail without assistance - so only a
+configuration or I/O error exits non-zero (2).

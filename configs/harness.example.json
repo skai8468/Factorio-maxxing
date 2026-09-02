@@ -1,0 +1,13 @@
+{
+  "policy_model": "claude-haiku-4-5",
+  "verifier_model": "claude-haiku-4-5",
+  "human": "interactive",
+  "stuck_detector": "consecutive_failures+error_signature",
+  "stuck_threshold": 3,
+  "max_interventions_without_progress": 3,
+  "verification_interval": 1,
+  "max_steps": 32,
+  "history_length": 16,
+  "environment": "mock",
+  "trajectory_dir": "trajectories"
+}

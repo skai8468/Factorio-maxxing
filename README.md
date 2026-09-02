@@ -26,3 +26,13 @@ Run the checks:
 ```
 
 Phases 1-4 run entirely offline: no API key, no Docker, no WSL2, no Factorio.
+
+## Offline smoke run
+
+```bash
+python -m factorio_maxxing.run --goal "Build a working iron mining setup" --mock --policy-model stub --verifier-model stub --human none
+```
+
+Writes a JSONL trajectory to `trajectories/`. `configs/harness.example.json` shows
+every configuration key; API keys come from environment variables, never from a config
+file.
