@@ -191,3 +191,24 @@ M0/M1 its stand-in is goal success rate, reported separately per human backend.
 unmeasurable there. Intervention count alone is insufficient — an agent needing zero
 interventions but making no progress is not better than one needing several and
 advancing. Capability and assistance metrics are always read as a pair.
+
+---
+
+## D14 — Toolchain: Python 3.13 floor, hatchling, venv + pip, ruff excludes Markdown
+
+**Decision.** `requires-python = ">=3.13"`. Build backend is `hatchling`. Development
+uses a plain `venv` and `pip install -e ".[dev]"`. No runtime dependencies. Ruff is
+configured with `extend-exclude = ["*.md"]`.
+
+**Why.** The 3.13 floor is the research lead's call; `fle-integration.md` records FLE
+as Python 3.10+, so 3.13 sits inside FLE's stated support and can be lowered in one
+line if that turns out to be wrong. `uv` is not installed on the development machine
+and build-plan §23 only recommends it for the Phase 5 live setup — the `pyproject.toml`
+is standard PEP 621, so `uv sync` works unchanged when development moves into WSL2.
+Ruff 0.16 formats Python code blocks inside Markdown, which would rewrite
+`docs/build-plan.md`; documentation is authority rank 2 and a linter must never edit
+it.
+
+**Consequence.** Phases 1–4 install nothing beyond `pytest` and `ruff`. FLE becomes an
+optional extra at Phase 5, not a base dependency, keeping the offline loop installable
+on a machine with no Docker or WSL2.

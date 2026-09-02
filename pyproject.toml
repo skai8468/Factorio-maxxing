@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "factorio-maxxing"
+version = "0.1.0"
+description = "Human-Assisted Factorio Harness - how much human assistance an LLM agent needs to climb the Factorio technology tree"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { text = "MIT" }
+authors = [{ name = "skai8468" }]
+# No runtime dependencies. Phases 1-4 run entirely offline against MockFactorioEnv.
+# FLE enters at Phase 5 (build-plan.md section 19) as an optional extra, not before.
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["factorio_maxxing"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 90
+target-version = "py313"
+# Ruff formats Python blocks inside Markdown. docs/ is authority rank 2
+# (CLAUDE.md Source of truth) and must never be rewritten by a linter.
+extend-exclude = ["*.md"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
