@@ -341,3 +341,35 @@ A second parallel flows argument would let the two disagree.
 **Consequence.** `VERIFICATION_WINDOW = 4` is a default, not a contract; the loop passes
 what it holds. Whether verifier tokens are recorded as their own trajectory fields is an
 open question for item 11 - the seam exists, the schema decision does not.
+
+---
+
+## D20 — Detectors are pure; the loop owns the intervention reset
+
+**Decision.** Detectors are pure functions of `(history, verifications, flows, errors)`
+and hold no counters. D12's "an intervention resets the stuck counter" is implemented in
+`loop.py`, which after an intervention passes only the events recorded since it.
+`errors` carries one entry per step, empty where the step ran cleanly. `flows` is
+accepted and currently unused - the flat-flow detector is future scope.
+
+**Why.** The contract signature is already a pure function of its inputs, and putting a
+second counter inside the detector would give the loop and the detector separate ideas
+of when the window began - the sort of divergence that produces an intervention storm or
+a detector that never fires again, both of which look like harness bugs in the results.
+`architecture.md` already places the counters in `loop.py`; this keeps them there.
+
+One error entry per step is what makes a clean step break the streak. Without it, an
+agent that fails, recovers, then fails differently would read as looping, and the
+repeated-error detector would fire on a healthy build.
+
+**Interpretation to confirm.** Build-plan section 21 requires that the detector "does
+not fire during legitimate incomplete progress". This is implemented as: below
+threshold, nothing fires - a build making progress across two non-DONE verifications is
+left alone. It is *not* implemented as a progress heuristic over production flows,
+because flat-flow detection is listed as future scope and explicitly not to be built
+now. If the stronger reading was intended - suppress the consecutive detector while
+flows are rising - that is a scope decision for the research lead, not a change to make
+unilaterally.
+
+**Consequence.** Mapping the config string `consecutive_failures+error_signature` onto
+`default_detector()` belongs to `run.py` at item 14, not here.
