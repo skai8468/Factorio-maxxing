@@ -260,8 +260,10 @@ factorio_maxxing/
     loop.py
     run.py
 tests/
-    test_goal.py  test_rendering.py  test_context.py  test_llm_parsing.py
-    test_verifier.py  test_stuck.py  test_human.py
+    test_package.py  test_goal.py  test_envs.py  test_rendering.py
+    test_context.py  test_llm.py  test_llm_parsing.py  test_api_client.py
+    test_verifier.py  test_stuck.py  test_human.py  test_trajectory.py
+    test_loop.py  test_run.py
     test_loop_offline.py  test_replay.py
     fixtures/
 configs/harness.example.json
@@ -332,9 +334,13 @@ interfaces.
 **History window: 16 steps**, matching FLE's `RecursiveReportFormatter(chunk_size=16)`
 for baseline comparability. No complex memory system.
 
-**Trajectory JSONL fields:** `run_id · step · goal · policy · observation · reward ·
-model · input_tokens · output_tokens · cache_read_tokens · cache_write_tokens ·
-latency_seconds · verification · stuck_reason · human_intervention · execution_errors`.
+**Trajectory JSONL records.** Superseded: the flat field list originally given here was
+replaced by four typed record types - `step`, `llm_call`, `verification`,
+`intervention` - discriminated by a single `type` field, with all model usage recorded
+as `llm_call` records carrying a `role`. Cost analysis is then one sum over `llm_call`
+records however many model callers the harness grows, rather than a schema widening per
+caller. The schema is in `contracts.md`; the reasoning, including the two rejected
+alternatives, is in `decisions.md` D22.
 
 ## 11. Core loop
 
@@ -384,11 +390,19 @@ where repair strategies attach in future scope.
   "max_steps": 32,
   "history_length": 16,
   "environment": "mock",
-  "trajectory_dir": "trajectories"
+  "trajectory_dir": "trajectories",
+  "api_reference": ""
 }
 ```
 
-API keys come from environment variables, never this file.
+API keys come from environment variables, never this file. An identity-linked API key
+also needs `ANTHROPIC_WORKSPACE_ID` set alongside it (`decisions.md` D27).
+
+`api_reference` is a path to a file describing the functions the environment provides,
+rendered to the policy as an `ENVIRONMENT API` section. Empty means the policy is told
+nothing about the API. Added after this section was first written, in response to the
+first live run, where the policy model invented an API because the prompt asked for
+Python without saying which functions exist (`decisions.md` D28).
 
 ---
 
