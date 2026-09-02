@@ -27,11 +27,11 @@ from typing import Any
 from factorio_maxxing.envs import MockFactorioEnv, MockFrame
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
-from factorio_maxxing.llm import StubLLMClient
+from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
 from factorio_maxxing.loop import run_goal
 from factorio_maxxing.stuck import default_detector
 from factorio_maxxing.trajectory import TrajectoryRecorder
-from factorio_maxxing.verifier import StubVerifier, VerificationResult
+from factorio_maxxing.verifier import LLMVerifier, StubVerifier, VerificationResult
 
 STUB_MODEL = "stub"
 DEFAULT_DETECTOR = "consecutive_failures+error_signature"
@@ -206,14 +206,17 @@ def build_environment(config: Config) -> MockFactorioEnv:
     )
 
 
-def build_policy_client(config: Config) -> StubLLMClient:
-    _require_stub(config.policy_model, "--policy-model")
-    return StubLLMClient(DEMO_POLICIES, model=config.policy_model)
+def build_policy_client(config: Config) -> LLMClient:
+    if config.policy_model == STUB_MODEL:
+        return StubLLMClient(DEMO_POLICIES, model=config.policy_model)
+    return _api_client(config.policy_model)
 
 
-def build_verifier(config: Config) -> StubVerifier:
-    _require_stub(config.verifier_model, "--verifier-model")
-    return StubVerifier(DEMO_VERDICTS)
+def build_verifier(config: Config):
+    """Build the verifier on its own model, configured independently (D5)."""
+    if config.verifier_model == STUB_MODEL:
+        return StubVerifier(DEMO_VERDICTS)
+    return LLMVerifier(_api_client(config.verifier_model))
 
 
 def build_human(config: Config, hints_path: str | None):
@@ -278,12 +281,12 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _require_stub(model: str, flag: str) -> None:
-    if model != STUB_MODEL:
-        raise ConfigError(
-            f"{flag}={model}: real model clients arrive at Phase 4 item 15; "
-            f"use {flag} {STUB_MODEL} until then"
-        )
+def _api_client(model: str) -> APIClient:
+    """Build a live client, turning a routing or key failure into a clean CLI error."""
+    try:
+        return APIClient(model)
+    except ValueError as error:
+        raise ConfigError(str(error)) from error
 
 
 def _print_summary(result) -> None:

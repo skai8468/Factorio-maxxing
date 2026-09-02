@@ -536,3 +536,37 @@ working. They exercise the loop and simulate nothing (D10).
 **Consequence.** A failed goal exits 0. Failure is a legitimate research result -
 build-plan section 25 expects goal 5 to fail without assistance - so only a
 configuration or I/O error exits non-zero (2).
+
+---
+
+## D26 — One generic API client; routing is a table, not an allowlist
+
+**Decision.** `APIClient` is a single OpenAI-compatible client. `PROVIDERS` maps a
+provider to a base URL and a key environment variable; `MODEL_ROUTES` maps a model
+prefix to a provider, stripping `open-router-` and `ollama-` before the request. An
+unroutable model is a routing failure that `provider=` overrides, never a rejected
+model. `openai` is an optional `api` extra, imported lazily. `temperature` is omitted
+from the request unless explicitly set. Usage fields absent from a provider's response
+record as zero.
+
+**Why.** This is FLE's `APIFactory` shape, and it keeps D5 intact: the capability ladder
+stays a config sweep rather than a code change, and nothing in the harness branches on
+which model is in use. Routing by prefix is a lookup table, so a model released
+tomorrow works today - there is a test asserting that an unreleased `claude-*` string
+passes through untouched.
+
+`openai` stays optional so Phases 1-3 install with zero dependencies and the offline
+suite runs on a machine that will never make an API call. Lazy import means importing
+`llm.py` never requires it.
+
+Omitting `temperature` follows the note in `fle-integration.md` that reasoning models
+may reject it. Recording absent usage fields as zero keeps a provider that reports no
+cache tokens from killing a run mid-goal.
+
+**Unverified.** Cache-token field names (`prompt_tokens_details.cached_tokens`,
+`cache_creation_input_tokens`) are read defensively and are unconfirmed against each
+provider's live response. Confirm per provider on the first live call and tighten then.
+
+**Consequence.** `run.py` no longer refuses non-stub models; a missing key fails with
+the name of the environment variable to set. The environment stays mock: this item is
+the model path only, and live Factorio remains Phase 5 item 17.

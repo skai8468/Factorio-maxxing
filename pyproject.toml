@@ -15,9 +15,14 @@ authors = [{ name = "skai8468" }]
 dependencies = []
 
 [project.optional-dependencies]
+# Live model calls only. Phases 1-4 offline work needs none of this.
+api = [
+    "openai>=1.0",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",
+    "openai>=1.0",
 ]
 
 [tool.hatch.build.targets.wheel]

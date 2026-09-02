@@ -19,12 +19,14 @@ from factorio_maxxing.run import (
     build_environment,
     build_human,
     build_parser,
+    build_verifier,
     load_config,
     load_hints,
     main,
     resolve_config,
 )
 from factorio_maxxing.trajectory import read_trajectory
+from factorio_maxxing.verifier import LLMVerifier
 
 EXAMPLE_CONFIG = Path("configs/harness.example.json")
 
@@ -198,7 +200,10 @@ def test_the_smoke_run_writes_a_trajectory(tmp_path):
     assert len({r["run_id"] for r in records}) == 1
 
 
-def test_a_real_model_is_refused_with_a_pointer_to_phase_4(tmp_path, capsys):
+def test_a_real_model_without_a_key_exits_with_the_variable_name(
+    tmp_path, capsys, monkeypatch
+):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     exit_code = main(
         [
             "--goal",
@@ -213,7 +218,32 @@ def test_a_real_model_is_refused_with_a_pointer_to_phase_4(tmp_path, capsys):
         ]
     )
     assert exit_code == 2
-    assert "Phase 4 item 15" in capsys.readouterr().err
+    assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+def test_an_unroutable_model_exits_cleanly(tmp_path, capsys):
+    exit_code = main(
+        [
+            "--goal",
+            "g",
+            "--mock",
+            "--policy-model",
+            "some-unknown-model",
+            "--human",
+            "none",
+            "--trajectory-dir",
+            str(tmp_path),
+        ]
+    )
+    assert exit_code == 2
+    assert "cannot route model" in capsys.readouterr().err
+
+
+def test_a_stub_policy_can_run_against_a_real_verifier_model(monkeypatch):
+    """D5: policy and verifier models stay independently configurable."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
+    verifier = build_verifier(Config(verifier_model="claude-haiku-4-5"))
+    assert isinstance(verifier, LLMVerifier)
 
 
 def test_a_bad_config_path_exits_cleanly(tmp_path, capsys):
