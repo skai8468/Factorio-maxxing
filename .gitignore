@@ -1,0 +1,18 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Run artifacts - trajectories are data, not source.
+# Committed fixtures live in tests/fixtures/ and are whitelisted below.
+trajectories/
+.fle/
+
+# Secrets
+.env
+*.key
+
+!tests/fixtures/
