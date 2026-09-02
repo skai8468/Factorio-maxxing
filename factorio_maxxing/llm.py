@@ -170,6 +170,7 @@ MODEL_ROUTES: tuple[tuple[str, str], ...] = (
 )
 
 MAX_TOKENS = 4096
+WORKSPACE_ID_ENV = "ANTHROPIC_WORKSPACE_ID"
 
 
 def resolve_provider(model: str, provider: str | None = None) -> tuple[Provider, str]:
@@ -214,13 +215,15 @@ class APIClient:
         api_key: str | None = None,
         max_tokens: int = MAX_TOKENS,
         temperature: float | None = None,
+        workspace_id: str | None = None,
         client: Any = None,
     ):
         self.model = model
         self.provider, self._sent_model = resolve_provider(model, provider)
         self.max_tokens = max_tokens
         self.temperature = temperature
-        self._client = client or _openai_client(self.provider, api_key)
+        self.workspace_id = workspace_id or os.environ.get(WORKSPACE_ID_ENV)
+        self._client = client or _openai_client(self.provider, api_key, self.workspace_id)
 
     def generate(self, prompt: str) -> LLMResponse:
         request: dict[str, Any] = {
@@ -249,7 +252,20 @@ class APIClient:
         )
 
 
-def _openai_client(provider: Provider, api_key: str | None) -> Any:
+def auth_headers(workspace_id: str | None = None) -> dict[str, str]:
+    """Extra headers an account may require.
+
+    An identity-linked API key must name the workspace the request acts in, so a
+    workspace id is sent whenever one is configured. Sent for every provider: a
+    provider that does not use it ignores it, and branching on provider here would put
+    account shape into the routing table.
+    """
+    return {"anthropic-workspace-id": workspace_id} if workspace_id else {}
+
+
+def _openai_client(
+    provider: Provider, api_key: str | None, workspace_id: str | None = None
+) -> Any:
     key = api_key or os.environ.get(provider.api_key_env)
     if not key:
         raise ValueError(
@@ -263,7 +279,11 @@ def _openai_client(provider: Provider, api_key: str | None) -> Any:
             "the openai package is required for live model calls; "
             'install it with pip install -e ".[api]"'
         ) from error
-    return OpenAI(base_url=provider.base_url, api_key=key)
+    return OpenAI(
+        base_url=provider.base_url,
+        api_key=key,
+        default_headers=auth_headers(workspace_id) or None,
+    )
 
 
 def _read_text(completion: Any) -> str:

@@ -12,6 +12,7 @@ from factorio_maxxing.llm import (
     PROVIDERS,
     APIClient,
     LLMClient,
+    auth_headers,
     resolve_provider,
 )
 
@@ -231,3 +232,30 @@ def test_no_request_is_made_when_the_client_is_constructed():
     api, fake = client()
     assert fake.completions.requests == []
     assert api.provider is PROVIDERS["claude"]
+
+
+def test_no_workspace_header_without_a_workspace_id():
+    assert auth_headers(None) == {}
+
+
+def test_a_workspace_id_becomes_a_header():
+    """An identity-linked API key must name the workspace it acts in."""
+    assert auth_headers("wrkspc_test") == {"anthropic-workspace-id": "wrkspc_test"}
+
+
+def test_the_workspace_id_is_read_from_the_environment(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_from_env")
+    api, _ = client()
+    assert api.workspace_id == "wrkspc_from_env"
+
+
+def test_an_explicit_workspace_id_wins_over_the_environment(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_from_env")
+    api, _ = client(workspace_id="wrkspc_explicit")
+    assert api.workspace_id == "wrkspc_explicit"
+
+
+def test_no_workspace_id_is_configured_when_the_environment_is_empty(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
+    api, _ = client()
+    assert api.workspace_id is None

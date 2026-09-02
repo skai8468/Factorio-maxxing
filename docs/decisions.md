@@ -570,3 +570,25 @@ provider's live response. Confirm per provider on the first live call and tighte
 **Consequence.** `run.py` no longer refuses non-stub models; a missing key fails with
 the name of the environment variable to set. The environment stays mock: this item is
 the model path only, and live Factorio remains Phase 5 item 17.
+
+---
+
+## D27 — Identity-linked API keys: the workspace id travels as a header
+
+**Decision.** `APIClient` sends `anthropic-workspace-id` whenever a workspace id is
+configured, read from `ANTHROPIC_WORKSPACE_ID` or passed explicitly. The header is sent
+for every provider rather than only for Anthropic.
+
+**Why.** Found on the first live call. An identity-linked API key - the per-user
+credential type, as opposed to a workspace-scoped key - is rejected with a 400 unless
+the request names the workspace it acts in. Auth itself was fine; only the workspace was
+missing.
+
+Sending it for every provider keeps account shape out of the routing table: a provider
+that does not use the header ignores it, whereas branching on provider here would put a
+credential detail into `MODEL_ROUTES` and give the harness its first provider
+conditional (D5).
+
+**Consequence.** Both `ANTHROPIC_API_KEY` and, for an identity-linked key,
+`ANTHROPIC_WORKSPACE_ID` must be in the environment. Neither is ever read from a config
+file.
