@@ -24,9 +24,18 @@ class GoalResult:
 
 Deliberately minimal: no subtasks, no decomposition, no planning graph.
 
+`Goal` validates on construction and raises `ValueError` for an empty or
+whitespace-only `description`, or for `max_steps < 1`. `GoalResult` does not
+validate: it is a passive record of what happened, including failures.
+
 ## `envs.py`
 
 ```python
+@dataclass(frozen=True)
+class Action:
+    code: str
+    agent_idx: int = 0
+
 class EnvProtocol(Protocol):
     def reset(self) -> dict: ...
     def step(self, action: Action) -> tuple[dict, float, bool, bool, dict]: ...
@@ -34,6 +43,14 @@ class EnvProtocol(Protocol):
 
 Mirrors FLE's gym signature so `RealFactorioEnv` is a thin wrapper.
 `MockFactorioEnv` is scripted by step index and does not interpret submitted Python.
+
+`Action` mirrors `fle/env/gym_env/action.py` so the Phase 5 wrapper is a field-for-field
+translation. FLE's third field, `game_state`, is omitted: it is the checkpoint/restore
+mechanism and checkpointing is future scope.
+
+`reset()` returns a bare observation `dict`. FLE's own `reset()` returns
+`tuple[dict, dict]`; `RealFactorioEnv` unpacks it and discards the `info` mapping,
+which no M0/M1 trajectory field consumes. One return shape keeps the loop simple.
 
 ## `llm.py`
 

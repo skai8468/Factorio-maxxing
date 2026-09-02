@@ -212,3 +212,30 @@ it.
 **Consequence.** Phases 1–4 install nothing beyond `pytest` and `ruff`. FLE becomes an
 optional extra at Phase 5, not a base dependency, keeping the offline loop installable
 on a machine with no Docker or WSL2.
+
+---
+
+## D15 — `Action` is defined locally; the mock repeats its final frame
+
+**Decision.** `envs.py` defines its own frozen `Action(code, agent_idx=0)` mirroring
+`fle/env/gym_env/action.py`, omitting FLE's `game_state` field.
+`MockFactorioEnv(reset_observation, frames)` returns the Nth `MockFrame` on the Nth
+`step()`, and repeats the final frame once the script is exhausted. `reset()` rewinds
+the index and returns a bare observation `dict`.
+
+**Why.** `contracts.md` already referenced `Action` in the `EnvProtocol` signature
+without defining it, and Phases 1-4 install no FLE dependency, so the type has to exist
+locally for the offline loop to run at all. Mirroring FLE's field names keeps the
+Phase 5 `RealFactorioEnv` a field-for-field translation rather than an adapter.
+`game_state` is omitted because it is the checkpoint/restore mechanism, which is future
+scope.
+
+Repeating the final frame lets a three-frame fixture back a 32-step run without
+inventing transitions the fixture author never wrote. Raising on exhaustion would force
+every `max_steps` test to script 32 frames; both options are deterministic, and this one
+keeps fixtures small. The mock never terminates a run on its own account beyond what its
+frames declare - loop termination is `loop.py`'s job.
+
+**Consequence.** `submitted_actions` retains what was submitted for test inspection
+only; it never influences a transition. `RealFactorioEnv` is not stubbed - it arrives at
+Phase 5 (build-plan section 19, item 17).
