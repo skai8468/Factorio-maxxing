@@ -373,3 +373,31 @@ unilaterally.
 
 **Consequence.** Mapping the config string `consecutive_failures+error_signature` onto
 `default_detector()` belongs to `run.py` at item 14, not here.
+
+---
+
+## D21 — Human backends: verbatim text, injected I/O, and hints that carry their origin
+
+**Decision.** `ask` returns the operator's text unaltered. `InteractiveHuman` takes
+`input_fn` and `output_fn` as constructor arguments, reads lines until a blank line, and
+treats a blank first line, EOF and interrupt alike as "no assistance". `ScriptedHuman`
+accepts `Hint(text, original_step)` or plain strings, matches by sequence order, exposes
+`next_intervention_index` and `last_hint` for the recorder, and reports coverage through
+`usage_report()` / `log_usage()`. Exhaustion and underuse are logged through the standard
+`logging` module.
+
+**Why.** Intervention text is the source of truth, so no backend strips, normalises or
+reformats it - only the decision of whether a line is blank uses a stripped copy.
+Injected I/O keeps `InteractiveHuman` testable without a terminal, which matters because
+it is the backend that actually runs the M1 experiments. Swallowing EOF and interrupt
+prevents a closed stdin from killing a run that has already spent real API budget.
+
+`original_step` travels with the hint rather than being looked up, because the recorder
+needs both numbers at the moment of replay: `intervention_index` says which hint this
+was, `original_step` says when it was needed in the run that produced it. Only the first
+is used for matching.
+
+**Consequence.** `loop.py` reads `next_intervention_index` before calling `ask` and
+`last_hint` after it. Whether the loop calls `log_usage()` at goal end, and where
+`intervention_index` and `original_step` land in the JSONL, are item 11 and 12
+questions.
