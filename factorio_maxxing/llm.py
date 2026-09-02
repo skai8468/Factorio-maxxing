@@ -6,10 +6,11 @@ The harness contains no provider or model conditionals: a model is a configurati
 string. Usage is stored raw - never a computed dollar cost - so trajectories stay
 re-priceable when pricing changes.
 
-Policy extraction is build-order item 6 and does not live here yet. A real API client
-is Phase 4 item 15.
+A real API client is Phase 4 item 15.
 """
 
+import ast
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
@@ -81,3 +82,46 @@ class StubLLMClient:
             cache_write_tokens=0,
             latency_seconds=self.latency_seconds,
         )
+
+
+_FENCE = re.compile(r"```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n(.*?)```", re.DOTALL)
+_UNCLOSED_FENCE = re.compile(r"```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\r?\n(.*)\Z", re.DOTALL)
+_PYTHON_TAGS = frozenset({"python", "py", "python3"})
+
+
+def extract_policy(text: str) -> str:
+    """Extract submittable Python from a model response.
+
+    Handles fenced ``python`` blocks, untagged fences, an unterminated fence left by a
+    truncated response, and bare Python. A response carrying no usable code yields an
+    empty string rather than raising: the failure then travels through the trajectory
+    and the EXECUTION section as observable data instead of as control flow.
+
+    Where a response contains several blocks the last is taken - reasoning, plans and
+    worked examples precede the final policy, and FLE's own GymAgent format puts its
+    POLICY stage last.
+
+    Fenced code is returned verbatim without a syntax check, so a model's broken code
+    reaches the environment and its SyntaxError is fed back. Unfenced text must parse
+    as Python to count as code at all, which is what separates bare Python from prose.
+    """
+    if not text or not text.strip():
+        return ""
+
+    blocks = _FENCE.findall(text)
+    tagged = [body for tag, body in blocks if tag.lower() in _PYTHON_TAGS]
+    if tagged:
+        return tagged[-1].strip()
+    if blocks:
+        return blocks[-1][1].strip()
+
+    unclosed = _UNCLOSED_FENCE.search(text)
+    if unclosed and unclosed.group(1).lower() in _PYTHON_TAGS | {""}:
+        return unclosed.group(2).strip()
+
+    candidate = text.strip()
+    try:
+        ast.parse(candidate)
+    except SyntaxError:
+        return ""
+    return candidate

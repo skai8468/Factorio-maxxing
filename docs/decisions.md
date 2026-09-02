@@ -265,3 +265,29 @@ Confirm against a real observation at Phase 5 and tighten then.
 
 **Consequence.** `max_entities` is a keyword argument, so observation compactness is
 already a knob that a later context experiment can sweep without editing the module.
+
+---
+
+## D17 — A response with no usable code extracts to empty, not an exception
+
+**Decision.** `extract_policy` returns `""` for a response carrying no usable code.
+It never raises. Where several fenced blocks are present the last is taken. Fenced code
+is returned verbatim without a syntax check; unfenced text must parse as Python to count
+as code at all. An unterminated fence, left by a response truncated at `max_tokens`,
+still yields its contents.
+
+**Why.** Raising would turn a model failure into control flow the loop must catch and
+translate. Returning empty code keeps the failure inside the trajectory: the step
+executes nothing, and the reason is visible in the recorded response and the EXECUTION
+section, where the error taxonomy and the repeated-error-signature stuck detector can
+both see it. Approved by the research lead.
+
+Taking the last block matches how models write - reasoning, plans and worked examples
+come before the final answer - and matches FLE's `GymAgent` format, which puts its
+POLICY stage last. Not syntax-checking fenced code is deliberate: the model meant it as
+code, so it should reach the environment and have its `SyntaxError` fed back rather than
+be silently discarded. The `ast.parse` check applies only to unfenced text, where it is
+the one available signal separating bare Python from prose.
+
+**Consequence.** An empty policy is a legitimate recorded value. `loop.py` and
+`trajectory.py` must both treat `""` as data, not as a missing field.
