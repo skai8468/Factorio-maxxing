@@ -316,3 +316,28 @@ do-not-repeat reminder - but the wording is ours, not copied from FLE.
 **Consequence.** `history_length` is a keyword argument, so the history window is
 already a sweepable experiment parameter (build-plan section 18) without editing the
 module.
+
+---
+
+## D19 — An unreadable verdict is NOT DONE; the window carries flows
+
+**Decision.** `parse_verdict` reads NOT DONE before DONE, and returns NOT DONE for an
+empty or unparseable response, keeping the raw text as the reason. `check(goal,
+observation, window)` takes `window` as recent rendered observations in step order, most
+recent last, rather than a separate flows structure. `LLMVerifier` retains
+`last_response` so verifier usage can be attributed separately from policy usage.
+
+**Why.** The failure modes are asymmetric. A false NOT DONE costs some steps; a false
+DONE ends the goal, records a success that did not happen, and corrupts the goal
+success rate that is the M0/M1 capability metric (D13). Defaulting to NOT DONE keeps the
+cheap error. Reading NOT DONE first matters because the string "NOT DONE" contains
+"DONE", so naive matching inverts the verdict in exactly the case that must not be got
+wrong.
+
+Rendered observations already carry a FLOWS section, so passing a window of them
+satisfies "production flows plus a short window" (D6) through one path instead of two.
+A second parallel flows argument would let the two disagree.
+
+**Consequence.** `VERIFICATION_WINDOW = 4` is a default, not a contract; the loop passes
+what it holds. Whether verifier tokens are recorded as their own trajectory fields is an
+open question for item 11 - the seam exists, the schema decision does not.
