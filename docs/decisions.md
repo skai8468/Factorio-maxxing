@@ -239,3 +239,29 @@ frames declare - loop termination is `loop.py`'s job.
 **Consequence.** `submitted_actions` retains what was submitted for test inspection
 only; it never influences a transition. `RealFactorioEnv` is not stubbed - it arrives at
 Phase 5 (build-plan section 19, item 17).
+
+---
+
+## D16 — Rendering is defensive, always emits every section, and caps entity lines
+
+**Decision.** `render_observation` always emits all five headers, using `(none)` where
+the observation carries nothing. It reads FLE keys defensively - a missing, `None`, or
+wrong-typed field renders as empty rather than raising. Entity lines are capped at
+`MAX_ENTITIES = 32`, with the remainder summarised as `... and N more`. `price_list` is
+never rendered.
+
+**Why.** A stable section structure across steps means the policy is not re-reading a
+differently shaped prompt each turn, and a renderer that raises on an unexpected
+observation would abort a run for a cosmetic reason. The cap matters because a mature
+base carries hundreds of entities: uncapped, ENTITIES alone would dominate the context
+window that history and guidance also have to fit into. `price_list` is large and
+irrelevant to any M0/M1 goal.
+
+**Unverified.** The exact `research` and `flows` sub-keys come from the `Observation`
+dataclass recorded in `fle-integration.md`, not from a live gym observation dict. The
+renderer accepts several spellings (`current_research`/`current`,
+`research_progress`/`progress`) and degrades to `(none)` on anything unrecognised.
+Confirm against a real observation at Phase 5 and tighten then.
+
+**Consequence.** `max_entities` is a keyword argument, so observation compactness is
+already a knob that a later context experiment can sweep without editing the module.
