@@ -8,8 +8,8 @@ assembles no prompts (context.py) and formats no observations (rendering.py).
 
 Two counters, per D12:
 
-- the stuck window resets on a successful intervention, so the agent gets a fresh
-  window to act on new information instead of the detector re-firing on the next step;
+- the stuck window resets whenever help is requested, answered or not, so the agent
+  gets a fresh window instead of the detector re-firing on the next step;
 - ``interventions`` does not reset, and aborts the goal at ``max_interventions``. With
   no progress signal defined at M0/M1 this is a hard cap on interventions per goal.
 """
@@ -79,8 +79,8 @@ def run_goal(
     flows: list[Any] = []
     window: list[str] = []
 
-    # Start of the current stuck window. A successful intervention moves these forward,
-    # which is how D12's reset is implemented: the detector holds no counters (D20).
+    # Start of the current stuck window. Requesting help moves these forward, which is
+    # how D12's reset is implemented: the detector holds no counters (D20).
     marks = dict(history=0, verifications=0, errors=0, flows=0)
     interventions = 0
 
@@ -141,17 +141,22 @@ def run_goal(
             continue
 
         text = _ask_and_record(recorder, human, goal, rendered, why, step, interventions)
-        if text is None:
-            continue
 
-        guidance.append(text)
-        interventions += 1
+        # Any request opens a fresh window, answered or not. The storm section 8a warns
+        # about is the detector re-firing on the next step, which happens identically
+        # when the human declines - and leaving it unreset would make a NoHuman run
+        # report more requests than an assisted run over the same goal.
         marks.update(
             history=len(history),
             verifications=len(verifications),
             errors=len(errors),
             flows=len(flows),
         )
+        if text is None:
+            continue
+
+        guidance.append(text)
+        interventions += 1
 
         if interventions >= max_interventions:
             return result(

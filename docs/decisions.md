@@ -453,7 +453,8 @@ migrating.
 
 1. A request for help is recorded as an `intervention` record whether or not it is
    answered. A declined request carries `text: null` and `intervention_index: null`.
-   Interventions are counted as records whose `text` is not null.
+   Interventions are counted as records whose `text` is not null. **The stuck window
+   resets on any request, answered or declined** (amended during item 13; see below).
 2. `interventions` does not reset and aborts the goal on reaching `max_interventions`
    (default 3) - at most that many interventions per goal.
 3. The loop does not call `ScriptedHuman.log_usage()`; `run.py` does it at end of run,
@@ -486,3 +487,27 @@ clock, so one set of window marks resets all four (D20).
 than by type, so any verifier that makes a model call gets its usage recorded and one
 that makes none writes no `llm_call` record (D22). This is backend-agnostic, not
 model-specific branching.
+
+---
+
+## D24 — The stuck window resets on any request for help, not only an answered one
+
+**Decision (research lead).** Requesting help advances the stuck window marks whether or
+not the human answers. Intervention *counting* is unchanged: a declined request is still
+zero interventions.
+
+**Why.** Found by an end-to-end test at item 13. Under `NoHuman` nothing is ever
+answered, so under the original reading - reset only on a successful intervention - the
+window never advanced and the detector fired on every step past the threshold. That is
+the intervention storm build-plan section 8a exists to prevent, arriving through the
+declined path instead of the answered one; the storm is caused by the detector re-firing
+on the next step, which happens identically either way.
+
+It also broke the baseline. Over the same goal, `InteractiveHuman` recorded requests at
+steps 1 and 3 while `NoHuman` recorded 1, 2 and 3, so "how often would help have been
+requested" could not be read across backends - which is the question `NoHuman` exists to
+answer, and half of the M1 result (D8, D13).
+
+**Consequence.** Request counts are comparable across human backends over an identical
+goal set. `interventions` still counts answered requests only, so `NoHuman` reports zero
+interventions while its stuck events remain visible in the trajectory.
