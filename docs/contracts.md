@@ -129,14 +129,41 @@ def build(goal, rendered_observation, history, guidance, errors) -> str: ...
 
 ## `trajectory.py`
 
-JSONL, append-friendly. Fields per record:
+JSONL, append-friendly. Four record types. Every record carries `type`, `run_id` and
+`step`; `type` is the only discriminator.
 
+```json
+{"type":"step","run_id":"...","step":0,"goal":"...","policy":"...",
+ "observation":{},"reward":0.0,"execution_errors":[]}
+
+{"type":"llm_call","run_id":"...","step":0,"role":"policy","model":"stub",
+ "input_tokens":412,"output_tokens":88,"cache_read_tokens":0,
+ "cache_write_tokens":0,"latency_seconds":0.0}
+
+{"type":"llm_call","run_id":"...","step":0,"role":"verifier","model":"stub",
+ "input_tokens":260,"output_tokens":21,"cache_read_tokens":0,
+ "cache_write_tokens":0,"latency_seconds":0.0}
+
+{"type":"verification","run_id":"...","step":0,"done":false,"reason":"..."}
+
+{"type":"intervention","run_id":"...","step":3,"stuck_reason":"...",
+ "text":"...","intervention_index":0,"original_step":3}
 ```
-run_id · step · goal · policy · observation · reward · model
-input_tokens · output_tokens · cache_read_tokens · cache_write_tokens
-latency_seconds · verification · stuck_reason · human_intervention
-intervention_index · original_step · execution_errors
-```
+
+All model usage - policy, verifier, and every future LLM caller - is recorded as
+`llm_call` records distinguished by `role`. Cost analysis is therefore permanently
+`sum(r["input_tokens"] for r in records if r["type"] == "llm_call")`, and no schema
+widening is needed when a new caller arrives (see `decisions.md` D22).
+
+Required consequences:
+
+- `verification_interval > 1` emits **no** verification record on skipped steps, rather
+  than a record with null columns.
+- A verifier that makes no API call - `StubVerifier` - emits a `verification` record and
+  **no** `llm_call` record. "No call made" stays distinguishable from "call made, zero
+  tokens".
+- Verdict and usage stay in separate records: `verification` is control-flow evidence,
+  `llm_call` is cost evidence. This preserves the verifier/recorder separation in D6.
 
 Intervention text is stored **verbatim** and is the source of truth. Optional
 classification (`KNOWLEDGE` / `DIAGNOSIS` / `PLANNING` / `CORRECTION`) is an additional

@@ -401,3 +401,46 @@ is used for matching.
 `last_hint` after it. Whether the loop calls `log_usage()` at goal end, and where
 `intervention_index` and `original_step` land in the JSONL, are item 11 and 12
 questions.
+
+---
+
+## D22 — Trajectory records are typed; all model usage is an `llm_call` record
+
+**Decision (research lead).** The trajectory is JSONL with four record types - `step`,
+`llm_call`, `verification`, `intervention` - discriminated by a single `type` field.
+Every record carries `type`, `run_id` and `step`. All model usage is recorded as
+`llm_call` records carrying a `role` (`policy`, `verifier`, and whatever comes later),
+rather than as usage columns on the step record.
+
+**Why.** Two rejected alternatives, recorded so they are not rebuilt:
+
+*Dropping verifier usage* loses real data. `LLMVerifier` exposes `last_response`
+precisely so the recorder can attribute verifier tokens, and at `verification_interval`
+1 the verifier runs every step on a substantial prompt. Discarding it corrupts
+cost-per-goal, a headline metric.
+
+*A `verifier_*` field family* reproduces the exact failure mode D9 exists to prevent.
+The schema would widen again for every new LLM caller - repair strategies at the
+`execute_policy` seam (M2+), the Goal Manager (M3a/M3b), possibly history summarisation
+- and every trajectory recorded before each widening would lack the new columns,
+silently corrupting longitudinal comparison.
+
+One record type with a `role` field carries all usage permanently. Cost analysis is
+`sum(r["input_tokens"] for r in records if r["type"] == "llm_call")` and never changes
+again.
+
+**Consequences to preserve.**
+
+- `verification_interval > 1` emits no verification record on a skipped step, rather
+  than null columns.
+- `StubVerifier` makes no API call, so it emits a `verification` record and no
+  `llm_call` record. "No call made" must stay distinguishable from "call made, zero
+  tokens".
+- Verdict and usage live in separate records: `verification` is control-flow evidence,
+  `llm_call` is cost evidence. This keeps D6's verifier/recorder separation clean.
+
+**Explicitly not built.** No record-type registry, no polymorphic record classes, no
+schema-validation layer. It is one discriminator field.
+
+**Scope note.** No trajectories existed when this was decided, so nothing needed
+migrating.
