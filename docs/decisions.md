@@ -734,3 +734,47 @@ body = SystemPromptGenerator(str(Path(fle.env.__file__).parent)).generate()
 **Unconfirmed.** That this actually stops the model inventing calls. The failure it
 targets was observed; the fix has not yet been demonstrated against live Factorio
 (item 18).
+
+---
+
+## D32 - `RealFactorioEnv` is a thin adapter with a lazy import
+
+**Decision.** `envs.py` gains `RealFactorioEnv`, satisfying the existing `EnvProtocol`
+with no change to it. FLE is imported inside `__init__`, never at module scope.
+Construction goes through `get_environment_info(task_key)` ->
+`GymEnvironmentSpec(**info)` -> `make_factorio_env(spec, run_idx)`, not `gym.make`.
+`reset()` unpacks FLE's `(observation, info)` pair and returns the observation alone;
+`step()` translates our `Action` into FLE's. `enable_vision` defaults off. A thirteenth
+config key, `task_key`, defaults to `open_play`.
+
+**Why the lazy import.** The working copy is on Windows and FLE lives in the WSL
+virtualenv (D29), so the offline suite runs where FLE is absent. A module-scope import
+would make `envs.py` - which every other module imports - unimportable there, taking the
+whole suite with it. The lazy import is what lets 314 tests pass on a machine that cannot
+install FLE, and it is exercised by a test asserting no module-level `fle` import exists.
+
+**Why not `gym.make`.** FLE registers each task with `gym.register`, so `gym.make` looks
+like the intended path, but it wraps the environment in `OrderEnforcing` and
+`PassiveEnvChecker`. FLE's `reset()` does not follow the Gymnasium contract closely
+enough to survive the checker. `make_factorio_env` returns the environment unwrapped.
+
+**Why `step` translates rather than duck-types.** FLE's `step` opens with
+`assert isinstance(action, Action)` against its own class, so a structurally identical
+object is rejected. `game_state` is left `None`: checkpointing is future scope (D15).
+
+**Why `task_key` is a config key and `open_play` the default.** `open_play` is used as a
+**neutral sandbox**, not as a task whose success criteria we adopt - the `Goal` drives the
+policy and our own verifier decides completion (D6). Overloading `environment` to carry
+the task name was rejected as ambiguous.
+
+**Verified live**, against the running container: the adapter constructs, satisfies
+`EnvProtocol`, `reset()` returns a dict, `step()` executes submitted Python for real
+(`harvest_resource` returned 5 coal) and returns the five-tuple, and `close()` releases
+the instance.
+
+**Consequence, and it is not small.** Driving a real observation through
+`render_observation` showed the renderer emitting `INVENTORY (none)` while the agent held
+5 coal. The observation's value shapes are lists of typed dicts, not the mappings
+`rendering.py` assumes (table in `fle-integration.md`). The adapter is correct and the
+renderer is not; a live goal is pointless until that is fixed, because the policy cannot
+see its own inventory. That is the next task, not this one.

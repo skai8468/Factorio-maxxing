@@ -130,3 +130,176 @@ def test_submitted_actions_are_recorded_verbatim():
 def test_env_requires_at_least_one_frame():
     with pytest.raises(ValueError, match="at least one frame"):
         MockFactorioEnv(reset_observation={}, frames=[])
+
+
+# --- RealFactorioEnv --------------------------------------------------------------
+#
+# FLE is not installed on the machine that runs this suite (D29: the working copy is on
+# Windows, FLE lives in the WSL virtualenv), so the adapter is exercised against a fake
+# `fle` package injected into sys.modules. That is the point of the lazy import: these
+# tests prove the translation contract without FLE present.
+
+
+class _FLEAction:
+    """Stands in for fle.env.gym_env.action.Action, which FLE's step asserts on."""
+
+    def __init__(self, code, agent_idx=0, game_state=None):
+        self.code = code
+        self.agent_idx = agent_idx
+        self.game_state = game_state
+
+
+class _FakeGymEnv:
+    def __init__(self, reset_result):
+        self._reset_result = reset_result
+        self.stepped: list[_FLEAction] = []
+        self.closed = False
+
+    def reset(self):
+        return self._reset_result
+
+    def step(self, action):
+        assert isinstance(action, _FLEAction), "FLE asserts on its own Action class"
+        self.stepped.append(action)
+        return {"inventory": {}}, 1.5, False, True, {"note": "ok"}
+
+    def close(self):
+        self.closed = True
+
+
+def install_fake_fle(monkeypatch, reset_result, spec_info=None):
+    """Inject a minimal fake `fle` package and return the env the adapter will wrap."""
+    import sys
+    import types
+
+    fake_env = _FakeGymEnv(reset_result)
+    captured: dict = {}
+
+    action_mod = types.ModuleType("fle.env.gym_env.action")
+    action_mod.Action = _FLEAction
+
+    registry_mod = types.ModuleType("fle.env.gym_env.registry")
+
+    class _Spec:
+        def __init__(self, **kwargs):
+            self.__dict__.update(kwargs)
+
+    def _get_environment_info(task_key):
+        if spec_info is not None and task_key not in spec_info:
+            return None
+        return {"task_key": task_key, "num_agents": 1, "enable_vision": True}
+
+    def _make_factorio_env(spec, run_idx):
+        captured["spec"] = spec
+        captured["run_idx"] = run_idx
+        return fake_env
+
+    registry_mod.GymEnvironmentSpec = _Spec
+    registry_mod.get_environment_info = _get_environment_info
+    registry_mod.make_factorio_env = _make_factorio_env
+
+    for name, mod in [
+        ("fle", types.ModuleType("fle")),
+        ("fle.env", types.ModuleType("fle.env")),
+        ("fle.env.gym_env", types.ModuleType("fle.env.gym_env")),
+        ("fle.env.gym_env.action", action_mod),
+        ("fle.env.gym_env.registry", registry_mod),
+    ]:
+        monkeypatch.setitem(sys.modules, name, mod)
+    return fake_env, captured
+
+
+def test_importing_envs_does_not_require_fle():
+    """The lazy import is the contract that keeps this suite runnable on Windows."""
+    import factorio_maxxing.envs as envs
+
+    assert "fle" not in getattr(envs, "__dict__", {})
+    source = __import__("inspect").getsource(envs)
+    module_level = [
+        line
+        for line in source.splitlines()
+        if line.startswith("import ") or line.startswith("from ")
+    ]
+    assert not [line for line in module_level if "fle" in line]
+
+
+def test_reset_unpacks_fle_observation_info_pair(monkeypatch):
+    """FLE annotates reset() as a dict but returns (observation, info)."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({"inventory": {"coal": 3}}, {}))
+    env = RealFactorioEnv()
+    assert env.reset() == {"inventory": {"coal": 3}}
+
+
+def test_reset_also_accepts_a_bare_observation(monkeypatch):
+    """Tolerate the annotation becoming true upstream."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result={"inventory": {"coal": 3}})
+    env = RealFactorioEnv()
+    assert env.reset() == {"inventory": {"coal": 3}}
+
+
+def test_step_translates_our_action_into_fles(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv()
+    result = env.step(Action(code="place_entity()", agent_idx=1))
+
+    assert result == ({"inventory": {}}, 1.5, False, True, {"note": "ok"})
+    submitted = fake.stepped[0]
+    assert submitted.code == "place_entity()"
+    assert submitted.agent_idx == 1
+    assert submitted.game_state is None, "checkpointing is future scope (D15)"
+
+
+def test_vision_is_off_by_default(monkeypatch):
+    """A rendered image costs ~1.1 MB per observation and is never shown to the policy."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    _, captured = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv()
+    assert captured["spec"].enable_vision is False
+
+
+def test_vision_can_be_enabled(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    _, captured = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(enable_vision=True)
+    assert captured["spec"].enable_vision is True
+
+
+def test_task_key_and_run_idx_reach_the_factory(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    _, captured = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(task_key="iron_plate_throughput", run_idx=2)
+    assert captured["spec"].task_key == "iron_plate_throughput"
+    assert captured["run_idx"] == 2
+
+
+def test_an_unknown_task_key_is_rejected(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({}, {}), spec_info={"open_play"})
+    with pytest.raises(ValueError, match="unknown FLE task key"):
+        RealFactorioEnv(task_key="not_a_task")
+
+
+def test_close_releases_the_instance(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv()
+    env.close()
+    assert fake.closed is True
+
+
+def test_real_env_satisfies_the_protocol(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({}, {}))
+    assert isinstance(RealFactorioEnv(), EnvProtocol)

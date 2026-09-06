@@ -24,7 +24,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from factorio_maxxing.envs import MockFactorioEnv, MockFrame
+from factorio_maxxing.envs import (
+    DEFAULT_TASK_KEY,
+    EnvProtocol,
+    MockFactorioEnv,
+    MockFrame,
+    RealFactorioEnv,
+)
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
@@ -101,6 +107,12 @@ class Config:
     max_steps: int = 32
     history_length: int = 16
     environment: str = "mock"
+    task_key: str = DEFAULT_TASK_KEY
+    """Which FLE task backs a live run. Used only when environment is "live".
+
+    `open_play` is a neutral sandbox, not a task whose success criteria we adopt: the
+    Goal drives the policy and our own verifier decides completion (D6). FLE's task
+    verification stays unused at M0/M1."""
     trajectory_dir: str = "trajectories"
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
@@ -172,6 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--api-reference", help="file describing the environment API for the policy"
     )
+    parser.add_argument("--task-key", help="FLE task backing a live run")
     return parser
 
 
@@ -194,23 +207,43 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "history_length": args.history_length,
         "trajectory_dir": args.trajectory_dir,
         "api_reference": args.api_reference,
+        "task_key": args.task_key,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
 
 
-def build_environment(config: Config) -> MockFactorioEnv:
+def build_environment(config: Config) -> EnvProtocol:
     if config.environment == "live":
-        raise ConfigError(
-            "a live Factorio environment arrives at Phase 5 item 17; "
-            "use --mock until then"
-        )
+        return _build_live_environment(config)
     if config.environment != "mock":
         raise ConfigError(f"unknown environment: {config.environment}")
     return MockFactorioEnv(
         reset_observation={"inventory": {"burner-mining-drill": 1, "coal": 4}},
         frames=[MockFrame(observation=obs) for obs in DEMO_OBSERVATIONS],
     )
+
+
+def _build_live_environment(config: Config) -> EnvProtocol:
+    """Connect to a running Factorio cluster, translating setup failures.
+
+    The two ways this fails are both operator problems with specific fixes, so neither
+    is allowed to surface as a bare traceback.
+    """
+    try:
+        return RealFactorioEnv(task_key=config.task_key)
+    except ImportError as exc:
+        raise ConfigError(
+            "live Factorio needs FLE installed: pip install -e '.[fle]' inside the "
+            f"WSL2 virtualenv (docs/fle-integration.md) - {exc}"
+        ) from exc
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
+    except RuntimeError as exc:
+        raise ConfigError(
+            f"could not reach a Factorio container ({exc}). Start one with "
+            "'fle cluster start -n 1 -s open_world' from ~/fle-work"
+        ) from exc
 
 
 def build_policy_client(config: Config) -> LLMClient:
@@ -278,20 +311,23 @@ def main(argv: list[str] | None = None) -> int:
     run_id = f"{datetime.now():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:8]}"
     path = Path(config.trajectory_dir) / f"{run_id}.jsonl"
 
-    with TrajectoryRecorder(path, run_id=run_id) as recorder:
-        result = run_goal(
-            goal,
-            env,
-            policy_client,
-            verifier,
-            human,
-            detector,
-            recorder,
-            api_reference=api_reference,
-            verification_interval=config.verification_interval,
-            history_length=config.history_length,
-            max_interventions=config.max_interventions_without_progress,
-        )
+    try:
+        with TrajectoryRecorder(path, run_id=run_id) as recorder:
+            result = run_goal(
+                goal,
+                env,
+                policy_client,
+                verifier,
+                human,
+                detector,
+                recorder,
+                api_reference=api_reference,
+                verification_interval=config.verification_interval,
+                history_length=config.history_length,
+                max_interventions=config.max_interventions_without_progress,
+            )
+    finally:
+        _close_environment(env)
 
     # D23: the loop stays backend-agnostic, so replay coverage is reported here.
     if isinstance(human, ScriptedHuman):
@@ -299,6 +335,23 @@ def main(argv: list[str] | None = None) -> int:
 
     _print_summary(result)
     return 0
+
+
+def _close_environment(env: EnvProtocol) -> None:
+    """Release a live Factorio instance, if this environment holds one.
+
+    Read by attribute rather than by type, so the mock needs no close() and any future
+    environment that holds a connection gets cleaned up for free. A failure here must
+    not mask the run's own outcome: the goal is finished and the trajectory is written
+    by this point, so a cleanup problem is logged, never raised.
+    """
+    close = getattr(env, "close", None)
+    if close is None:
+        return
+    try:
+        close()
+    except Exception as error:  # noqa: BLE001 - cleanup must not mask the result
+        logging.warning("closing the environment failed: %s", error)
 
 
 def _api_client(model: str) -> APIClient:

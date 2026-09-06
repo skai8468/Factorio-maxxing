@@ -149,13 +149,39 @@ inventory        map_image            messages   raw_text   research
 score            serialized_functions task_info  task_verification
 ```
 
-`research` follows `fle/commons/models/research_state.py::ResearchState`:
-`technologies` (dict of `TechnologyState`), `current_research` (`Optional[str]`),
-`research_progress` (**a float**), `research_queue` (list), `progress` (dict).
-`rendering.py::_render_research` reads `current_research`, `research_progress` and
-`technologies`, all three exact matches, so its defensive aliases are unnecessary but
-harmless. Note that `research_progress` being a float makes our `remaining:` label
-misleading - a progress fraction, not an ingredient count.
+`research` carries the field *names* of
+`fle/commons/models/research_state.py::ResearchState` - `technologies`,
+`current_research`, `research_progress`, `research_queue`, `progress` - but **not its
+types**. The gym observation is a plain dict built for the observation space, and the
+dataclass annotations do not survive the conversion.
+
+### Observation value shapes - measured, and they break the renderer
+
+Read off a live `step()` after harvesting coal and stone. These are the shapes
+`rendering.py` actually has to cope with, and it currently does not:
+
+| Key | Real shape | What the renderer assumed |
+|---|---|---|
+| `inventory` | **list** of `{"quantity": np.int32, "type": str}` | dict of `name -> count` |
+| `entities` | list of dicts | list - correct |
+| `research.technologies` | **list** of `{"name", "researched", "enabled", "level", "prerequisites", ...}` | `dict` of states |
+| `research.research_progress` | **int** (`0`), not a float or ingredient list | ingredient counts |
+| `flows.input/output/crafted/harvested` | **lists**: `[{"type": "coal", "rate": 7}]`, harvested uses `"amount"` | dict-ish counts |
+| `flows` also has | `price_list`, `static_items` | - |
+
+Consequence, observed live: after the agent harvested 5 coal, `render_observation`
+emitted `INVENTORY (none)` - **the policy cannot see its own inventory**. `RESEARCH`
+printed `remaining: 0` from the int, and `FLOWS` degraded to `output: 1 items`. D16
+anticipated exactly this ("confirm against a real observation at Phase 5 and tighten
+then"); this table is that confirmation, and the tightening is still to do.
+
+Note also the **numpy scalars** (`np.int32`): `json.dumps` cannot serialise them.
+`trajectory.py` already passes `default=str`, so a live run does not crash on the first
+record - but the consequence is that inventory quantities land in the JSONL as **strings**
+(`"quantity": "7"`), and any analysis over trajectories must coerce them back. That is a
+data-quality wrinkle to know about, not a defect to fix blindly: coercing at record time
+would mean the recorder editing what it observed, which cuts against its passive role
+(D6).
 
 **Size, and where it goes.** On a fresh `open_play` world the observation serialises to
 **41,455 bytes, of which `research` is 40,853 - 98.5%**, because it carries the entire

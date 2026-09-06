@@ -19,6 +19,17 @@ dependencies = []
 api = [
     "openai>=1.0",
 ]
+# Live Factorio. Install inside WSL2, where Docker and the cluster live (D29, D30).
+#
+# The a2a-sdk pin is load-bearing, not tidiness. FLE 0.4.3 declares a2a-sdk with no
+# constraint, so a fresh resolve takes 1.x, where a2a.types no longer exports TextPart,
+# Message, AgentCard or Role. Six FLE modules import those names, including
+# agents/agent_abc.py, which fle.env.gym_env.registry pulls in - so make_factorio_env
+# dies at import. See docs/fle-integration.md.
+fle = [
+    "factorio-learning-environment[eval]>=0.4.3",
+    "a2a-sdk<1",
+]
 dev = [
     "pytest>=8.0",
     "ruff>=0.6",

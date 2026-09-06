@@ -97,9 +97,16 @@ def test_the_example_config_api_reference_file_exists():
 
 
 def test_no_api_key_field_exists():
-    """API keys come from the environment, never a config file."""
+    """API keys come from the environment, never a config file (D27).
+
+    "key" alone is too crude a signal - `task_key` names an FLE task, not a credential -
+    so credential-shaped words are matched directly and the "key" fields are pinned by
+    name. A future `openai_key` fails on the second assertion.
+    """
     names = {field.name for field in fields(Config)}
-    assert not [name for name in names if "key" in name or "token" in name]
+    credentialish = ("secret", "token", "password", "credential", "api_key", "apikey")
+    assert not [n for n in names if any(word in n for word in credentialish)]
+    assert {n for n in names if "key" in n} == {"task_key"}
 
 
 def test_config_file_is_loaded(tmp_path):
@@ -145,9 +152,57 @@ def test_mock_and_live_flags_select_the_environment():
     assert resolve_config(parse("--goal", "g", "--live")).environment == "live"
 
 
-def test_live_is_refused_with_a_pointer_to_phase_5():
-    with pytest.raises(ConfigError, match="Phase 5 item 17"):
+def _live_failure(monkeypatch, exc):
+    """Force RealFactorioEnv to fail a given way, whether or not FLE is installed.
+
+    Monkeypatching keeps these tests identical on Windows, where FLE is absent, and
+    inside WSL, where it is present and would otherwise open a real connection.
+    """
+
+    def boom(*args, **kwargs):
+        raise exc
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", boom)
+
+
+def test_live_without_fle_installed_names_the_extra(monkeypatch):
+    _live_failure(monkeypatch, ImportError("No module named 'fle'"))
+    with pytest.raises(ConfigError, match=r"\.\[fle\]"):
         build_environment(Config(environment="live"))
+
+
+def test_live_without_a_running_cluster_names_the_command(monkeypatch):
+    _live_failure(monkeypatch, RuntimeError("No Factorio containers available"))
+    with pytest.raises(ConfigError, match="fle cluster start"):
+        build_environment(Config(environment="live"))
+
+
+def test_live_with_an_unknown_task_key_is_refused(monkeypatch):
+    _live_failure(monkeypatch, ValueError("unknown FLE task key: nope"))
+    with pytest.raises(ConfigError, match="unknown FLE task key"):
+        build_environment(Config(environment="live", task_key="nope"))
+
+
+def test_live_passes_the_configured_task_key(monkeypatch):
+    seen = {}
+
+    def record(task_key, **kwargs):
+        seen["task_key"] = task_key
+        return object()
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
+    build_environment(Config(environment="live", task_key="iron_plate_throughput"))
+    assert seen["task_key"] == "iron_plate_throughput"
+
+
+def test_task_key_defaults_to_open_play():
+    assert Config().task_key == "open_play"
+    assert resolve_config(parse("--goal", "g")).task_key == "open_play"
+
+
+def test_task_key_is_overridable_from_the_command_line():
+    args = parse("--goal", "g", "--live", "--task-key", "steel_plate_throughput")
+    assert resolve_config(args).task_key == "steel_plate_throughput"
 
 
 def test_an_unknown_environment_is_refused():

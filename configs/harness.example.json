@@ -9,6 +9,7 @@
   "max_steps": 32,
   "history_length": 16,
   "environment": "mock",
+  "task_key": "open_play",
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"
 }
