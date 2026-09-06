@@ -32,6 +32,14 @@ Recorded because two of these cost real time and neither is documented by FLE.
 | Repo path in WSL | `/mnt/c/Users/leong/dev/Factorio-maxxing` (D29) |
 | Python | 3.13.15, installed by `uv python install 3.13` |
 | `uv` | 0.12.10, installed to `~/.local/bin` |
+| FLE venv | `~/venvs/fle`, with this package installed editable from `/mnt/c` |
+| `fle` working dir | `~/fle-work` - run every `fle` command from here, never the repo |
+
+**API credentials must be set inside WSL.** They do not cross from Windows: the harness
+runs in the WSL virtualenv, so `ANTHROPIC_API_KEY` and `ANTHROPIC_WORKSPACE_ID` (D27) have
+to exist there. Keep them in `~/fle-work/.env.local` - outside the repository, so they
+cannot be committed - and source it before a live run. Do not use FLE's own
+`~/fle-work/.env`: its `ANTHROPIC_API_KEY=XXX` placeholder would shadow the real key.
 
 **`wsl --install` alone was not sufficient.** It enabled `VirtualMachinePlatform` and
 installed the kernel, but distro registration then failed with
@@ -116,6 +124,46 @@ re-apply and re-verify.
 `list_available_environments()` then returns **30 task keys**, including `open_play`,
 `open_play_production`, and throughput tasks from `iron_ore_throughput` up to
 `utility_science_pack_throughput`.
+
+### Watching a run with a real Factorio client - verified 2026-09-07
+
+Optional, and needed by nothing in the harness; the FLE renderer produces map images
+without a game client at all. Recorded because getting a client connected took four
+distinct fixes, none of them obvious from the error message, which is only ever
+"could not establish network communication with server".
+
+1. **Version must match exactly.** Factorio multiplayer refuses a mismatch. Steam offers
+   2.0.77/2.0.76/2.0.72 but not FLE's pinned 2.0.73, which is why the server moved to
+   2.0.77 (D34).
+2. **Connect to the WSL VM's IP, not `localhost`.** WSL2's default NAT networking forwards
+   TCP on localhost but not UDP, and Factorio's game port is UDP. Get the address with
+   `ip -4 addr show eth0` inside WSL - it was `172.25.110.245`, and **it changes when WSL
+   restarts**. `networkingMode=mirrored` in `%USERPROFILE%\.wslconfig` would make
+   `localhost` work permanently, at the cost of a `wsl --shutdown`.
+3. **The Hyper-V firewall blocks all inbound traffic to the WSL VM.** This is the one that
+   looks like a Factorio problem and is not. `Get-NetFirewallHyperVVMSetting -PolicyStore
+   ActiveStore` reports `DefaultInboundAction: Block`, and nothing from Windows reaches
+   the VM on any port - ping and TCP fail too, which is the quickest way to tell this
+   apart from a UDP-specific problem. Fix, elevated, and narrow:
+
+   ```
+   New-NetFirewallHyperVRule -Name "Factorio-WSL-Game" -DisplayName "Factorio game port (WSL)" `
+     -VMCreatorId "{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}" -Direction Inbound `
+     -Protocol UDP -LocalPorts 34197 -Action Allow
+   ```
+
+   Prefer this to `Set-NetFirewallHyperVVMSetting -DefaultInboundAction Allow`, which
+   opens every port to the VM.
+4. **Do not restart the cluster while someone is connecting.** A `fle cluster stop/start`
+   cycle logs `Quitting: signal` and drops the player mid-join, which reads exactly like a
+   connection failure.
+
+**Diagnosing this from the WSL side** is far faster than guessing from the client. Capture
+with `tcpdump -i any -n udp port 34197` and read the direction: no packets at all means
+they are blocked before the VM; one-way traffic means the server is not answering;
+a two-way exchange of growing sizes (14 -> 26 -> 50 -> 131 bytes) is a real handshake.
+Confirm the outcome in `docker logs`, which prints `[JOIN] <name> joined the game`, and
+`/players online` over RCON.
 
 **`fle` writes state into the current working directory** - a `.env` template of `XXX`
 placeholders, and `.fle/data.db` for its SQLite store. Invoked through `wsl.exe`, the
