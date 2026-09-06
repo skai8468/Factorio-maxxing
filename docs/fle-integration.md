@@ -118,20 +118,71 @@ this is the checkpoint/restore mechanism (future scope).
 ### `fle/env/gym_env/environment.py`
 
 ```python
-# confirmed 0.4.3, read from the installed source by inspect.signature
+# signatures as annotated in 0.4.3
 def reset(self, options: Optional[Dict[str, Any]] = None,
-          seed: Optional[int] = None) -> Dict[str, Any]
+          seed: Optional[int] = None) -> Dict[str, Any]     # ANNOTATION LIES - see below
 def step(self, action: Action) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]
     # (observation, reward, terminated, truncated, info)
 ```
 
-**Correction.** This document previously recorded `reset()` as returning
-`tuple[dict, dict]` - an `(observation, info)` pair, the Gymnasium convention. In 0.4.3
-it is annotated as returning a **single observation dict**, with no `info`. `step()` is
-unchanged and does return the five-tuple. `RealFactorioEnv` (item 17) must not unpack
-`reset()` as a pair. *Unverified:* this is the annotation, not an observed return value -
-confirm against an actual `reset()` call when item 17 first connects, since an annotation
-can lie.
+**`reset()`'s annotation is wrong - it returns a 2-tuple.** Confirmed 2026-09-06 by
+calling it against a live container: `reset()` returns `(observation, info)`, the
+Gymnasium convention, where `info` is an empty dict. The `-> Dict[str, Any]` annotation
+describes only the first element.
+
+This document briefly recorded the opposite, on the strength of the annotation alone,
+and was corrected by measurement. The original `tuple[dict, dict]` note was right.
+**`RealFactorioEnv` must unpack the pair** and return only the observation, because our
+`EnvProtocol.reset()` returns a single observation dict (`envs.py`). `step()` genuinely
+does return the five-tuple.
+
+The lesson is cheap to state and was expensive to learn twice: in this codebase,
+annotations are evidence of intent, not of behaviour. Verify against a live call.
+
+### Observation dict - confirmed against a live `reset()` 2026-09-06
+
+Top-level keys, settling the `unverified` note in D16:
+
+```
+automated_score  character_positions  entities   flows      game_info
+inventory        map_image            messages   raw_text   research
+score            serialized_functions task_info  task_verification
+```
+
+`research` follows `fle/commons/models/research_state.py::ResearchState`:
+`technologies` (dict of `TechnologyState`), `current_research` (`Optional[str]`),
+`research_progress` (**a float**), `research_queue` (list), `progress` (dict).
+`rendering.py::_render_research` reads `current_research`, `research_progress` and
+`technologies`, all three exact matches, so its defensive aliases are unnecessary but
+harmless. Note that `research_progress` being a float makes our `remaining:` label
+misleading - a progress fraction, not an ingredient count.
+
+**Size, and where it goes.** On a fresh `open_play` world the observation serialises to
+**41,455 bytes, of which `research` is 40,853 - 98.5%**, because it carries the entire
+technology tree with prerequisites and ingredients on every observation. Everything else
+is under 200 bytes. This is a *trajectory* cost, not a prompt cost: the renderer collapses
+`technologies` to a `researched: N/M` count, so the tree never reaches the model.
+
+### Cost of `enable_vision` - measured 2026-09-06
+
+Rendering happens in the Python process (`namespace._render().to_base64()`), not in the
+container, which `fle/cluster/docker-compose.yml:18` caps at `memory: 1024m` regardless.
+
+| | vision off | vision on |
+|---|---|---|
+| Python RSS | 116.0 MB | 126.8 MB |
+| `reset()` | 0.8 s | 2.0 s |
+| observation JSON | 41,455 B | 53,903 B |
+| decoded PNG | - | 9,335 B |
+| 32-step trajectory | 1.26 MB | 1.64 MB |
+
+Sprites are a **one-time 365 MB** in `~/fle-work/.fle` (300 MB spritemaps, 44 MB
+`sprites-hr`, 22 MB `sprites`; 9,496 files) taking ~18 minutes to fetch via `fle sprites`.
+Without them, rendering silently produces empty images rather than failing.
+
+**These are floor values, measured on an empty world** where `entities` is 2 bytes. Both
+the PNG and the 1.2 s render cost grow with the size of the factory. The dominant
+trajectory cost is `research` either way, not the image.
 
 `reward = production_score - initial_score - error_penalty`, unless the task supplies
 `REWARD_OVERRIDE_KEY` in `task_success.meta`. Observations are returned as **dicts**
