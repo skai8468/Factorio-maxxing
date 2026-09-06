@@ -3,8 +3,11 @@
 Findings about the Factorio Learning Environment, recorded so future sessions do not
 re-derive them. **Consume this document instead of re-reading FLE source.**
 
-Verified against `JackHopkins/factorio-learning-environment` @ `main`, 2026-09-02.
-FLE version 0.3.0. Re-verify before relying on anything marked *unverified*.
+Originally verified against `JackHopkins/factorio-learning-environment` @ `main`,
+2026-09-02, FLE version 0.3.0. **The installed version is 0.4.3** (PyPI, 2026-09-06);
+findings re-checked against it are marked *confirmed 0.4.3*, and one recorded detail
+turned out to be wrong - see the `reset()` note below. Re-verify before relying on
+anything marked *unverified*.
 
 ---
 
@@ -52,6 +55,49 @@ the available 26.04 LTS deliberately: FLE is the risky dependency, and a newer g
 a system Python that binary wheels may lag on would make install friction hard to
 distinguish from harness defects (the D3 attribution argument).
 
+Docker Engine runs inside the distro rather than Docker Desktop (D30): Docker 29.8.0,
+Compose v5.5.1, containerd v2.3.4, service enabled under systemd.
+
+### Installing FLE - two things that block a fresh install
+
+Environment: `~/venvs/fle`, created with `uv venv --python 3.13`, FLE installed as
+`factorio-learning-environment[eval]` (0.4.3, 148 packages).
+
+**1. `a2a-sdk` must be pinned below 1.0.** FLE 0.4.3 declares `a2a-sdk` with **no version
+constraint**, so a fresh resolve picks up 1.x, in which `a2a.types` no longer exports
+`TextPart`, `Message`, `AgentCard`, `Role`, `AgentCapabilities`, `AgentProvider` or
+`AgentSkill`. Six FLE modules import those names - including `fle/agents/agent_abc.py`,
+which `fle.env.gym_env.registry` pulls in transitively - so `make_factorio_env` and
+`list_available_environments` both die at import with:
+
+```
+ImportError: cannot import name 'TextPart' from 'a2a.types'
+```
+
+Fix: `uv pip install "a2a-sdk<1"`, which resolves to 0.3.26. All eight symbols are then
+present and `registry` imports cleanly. **This constraint must travel with the `fle`
+optional extra when item 17 adds it to `pyproject.toml`**, or the next fresh install
+reproduces the failure.
+
+**2. The `[eval]` extra builds `psycopg2` from source**, which needs `pg_config`. Install
+`build-essential` and `libpq-dev` first, or the install aborts partway. (`psycopg2-binary`
+is also pulled in, but does not satisfy the `psycopg2` requirement.)
+
+### Cluster - confirmed working 2026-09-06
+
+`fle cluster start -n 1 -s open_world` pulls `factoriotools/factorio:2.0.73` and starts
+`cluster-factorio_0-1`, publishing `34197/udp` (game) and `27000->27015/tcp` (RCON).
+`list_available_environments()` then returns **30 task keys**, including `open_play`,
+`open_play_production`, and throughput tasks from `iron_ore_throughput` up to
+`utility_science_pack_throughput`.
+
+**`fle` writes state into the current working directory** - a `.env` template of `XXX`
+placeholders, and `.fle/data.db` for its SQLite store. Invoked through `wsl.exe`, the
+working directory is inherited from Windows, so running it from the repo drops those
+files into the repository. `.env` is gitignored so nothing leaks, but the template sets
+`ANTHROPIC_API_KEY=XXX`, which would shadow the real key that D27 requires from the
+environment. **Run `fle` from `~/fle-work`**, not from the repo.
+
 ---
 
 ## Gym interface
@@ -72,10 +118,20 @@ this is the checkpoint/restore mechanism (future scope).
 ### `fle/env/gym_env/environment.py`
 
 ```python
-def reset(self, options=None, seed=None) -> tuple[dict, dict]   # (observation, info)
-def step(self, action: Action) -> tuple[dict, float, bool, bool, dict]
+# confirmed 0.4.3, read from the installed source by inspect.signature
+def reset(self, options: Optional[Dict[str, Any]] = None,
+          seed: Optional[int] = None) -> Dict[str, Any]
+def step(self, action: Action) -> Tuple[Dict[str, Any], float, bool, bool, Dict[str, Any]]
     # (observation, reward, terminated, truncated, info)
 ```
+
+**Correction.** This document previously recorded `reset()` as returning
+`tuple[dict, dict]` - an `(observation, info)` pair, the Gymnasium convention. In 0.4.3
+it is annotated as returning a **single observation dict**, with no `info`. `step()` is
+unchanged and does return the five-tuple. `RealFactorioEnv` (item 17) must not unpack
+`reset()` as a pair. *Unverified:* this is the annotation, not an observed return value -
+confirm against an actual `reset()` call when item 17 first connects, since an annotation
+can lie.
 
 `reward = production_score - initial_score - error_penalty`, unless the task supplies
 `REWARD_OVERRIDE_KEY` in `task_success.meta`. Observations are returned as **dicts**
@@ -117,7 +173,9 @@ rather than hand-authored (future scope, M3).
 - `list_available_environments() -> List[str]` — all registered task keys.
 - `get_environment_info(task_key) -> dict`
 - `make_factorio_env(spec, run_idx)` — creates the `FactorioInstance`, sets speed 10,
-  unpauses, calls `task.setup(instance)`, returns `FactorioGymEnv`.
+  unpauses, calls `task.setup(instance)`, returns `FactorioGymEnv`. Confirmed 0.4.3:
+  `make_factorio_env(spec: GymEnvironmentSpec, run_idx: int) -> FactorioGymEnv`, so
+  item 17 needs a `GymEnvironmentSpec`, not a bare task-key string.
 - Environments auto-register on module import.
 - Server discovery: `FACTORIO_SERVER_ADDRESS` / `FACTORIO_SERVER_PORT` env vars
   override local container discovery. `PORT_OFFSET` selects among local containers.
