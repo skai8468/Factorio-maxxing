@@ -72,7 +72,28 @@ def test_defaults_match_the_documented_config():
 def test_the_example_config_matches_the_config_fields():
     data = json.loads(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
     assert set(data) == {field.name for field in fields(Config)}
-    assert Config(**data) == Config()
+
+
+def test_the_example_config_is_the_defaults_plus_the_api_reference():
+    """The example is a complete working config, so it points at the API reference.
+
+    `api_reference` is the one field that cannot default in code: the default would
+    have to be a relative path, and `load_api_reference` exits 2 on a missing file,
+    so any run from outside the repository root would fail (D28, D31).
+    """
+    data = json.loads(EXAMPLE_CONFIG.read_text(encoding="utf-8"))
+    assert Config(**{**data, "api_reference": ""}) == Config()
+    assert data["api_reference"] == "configs/fle_api_reference.md"
+
+
+def test_the_example_config_api_reference_file_exists():
+    """Guards the shipped reference: a missing file would only surface in a live run."""
+    path = Path(json.loads(EXAMPLE_CONFIG.read_text(encoding="utf-8"))["api_reference"])
+    assert path.is_file()
+    text = path.read_text(encoding="utf-8")
+    assert "```types" in text
+    assert "```methods" in text
+    assert "manual for the tools" in text
 
 
 def test_no_api_key_field_exists():

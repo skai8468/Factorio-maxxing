@@ -197,3 +197,8 @@ rendered to the policy as an `ENVIRONMENT API` section. Empty means the policy i
 nothing about the API - correct against the mock, which ignores submitted code, and
 wrong against live Factorio (`decisions.md` D28). Added after build-plan section 12 was
 written; that section lists the other eleven keys.
+
+The shipped reference is `configs/fle_api_reference.md`, generated from the installed FLE
+by its own `SystemPromptGenerator` (`decisions.md` D31). The default stays `""` because a
+relative-path default fails for any run started outside the repository root;
+`configs/harness.example.json` sets it, and so must any live run.
