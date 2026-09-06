@@ -18,6 +18,40 @@ FLE version 0.3.0. Re-verify before relying on anything marked *unverified*.
 - Linux-first. `fle/cluster/run-envs.sh` is bash; cluster startup assumes POSIX paths
   and Linux Docker networking. On Windows, run everything inside WSL2.
 
+### Local WSL2 setup - verified 2026-09-06
+
+Recorded because two of these cost real time and neither is documented by FLE.
+
+| Item | Value |
+|---|---|
+| Distro | Ubuntu 24.04.4 LTS (Noble Numbat), default user `leong` (uid 1000, `sudo`) |
+| Kernel | 6.18.33.2-microsoft-standard-WSL2, WSL 2.7.13.0 |
+| Repo path in WSL | `/mnt/c/Users/leong/dev/Factorio-maxxing` (D29) |
+| Python | 3.13.15, installed by `uv python install 3.13` |
+| `uv` | 0.12.10, installed to `~/.local/bin` |
+
+**`wsl --install` alone was not sufficient.** It enabled `VirtualMachinePlatform` and
+installed the kernel, but distro registration then failed with
+`HCS_E_HYPERV_NOT_INSTALLED`, whose error text misleadingly says to enable Virtual
+Machine Platform - which was already enabled. The actual cause was
+`hypervisorlaunchtype Off` in the boot configuration, so no hypervisor started at boot
+despite every hardware requirement being met. Fix, elevated, then reboot:
+
+```
+bcdedit /set hypervisorlaunchtype auto
+```
+
+Diagnose it with `HypervisorPresent` from `Get-ComputerInfo`: features enabled plus all
+four `HyperVRequirement*` true plus `HypervisorPresent: False` means the launch type,
+not the firmware and not the optional components.
+
+**Ubuntu 24.04 ships Python 3.12.3, below this project's `>=3.13` floor** (D14). Chosen
+fix is `uv`-managed 3.13 rather than the deadsnakes PPA or lowering the floor, so the
+interpreter is pinned by the project rather than by the distro. 24.04 LTS was chosen over
+the available 26.04 LTS deliberately: FLE is the risky dependency, and a newer glibc plus
+a system Python that binary wheels may lag on would make install friction hard to
+distinguish from harness defects (the D3 attribution argument).
+
 ---
 
 ## Gym interface
