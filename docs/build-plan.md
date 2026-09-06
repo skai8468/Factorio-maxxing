@@ -641,7 +641,12 @@ python -m factorio_maxxing.run --goal "Build a working iron mining setup" \
 wsl --install          # admin, requires reboot
 ```
 
-Then Docker Desktop with the WSL2 backend. The working copy **stays on Windows** at
+Then Docker Engine, installed from Docker's official signed apt repository **inside the
+WSL2 distro**, with `systemd=true` in `/etc/wsl.conf` so `dockerd` starts at boot. This
+supersedes the earlier "Docker Desktop with the WSL2 backend": FLE is Linux-first, and
+running the engine in the distro keeps containers, the `fle` package and the harness in
+one network namespace instead of routing RCON across a second distro
+(`decisions.md` D30). The working copy **stays on Windows** at
 `C:\Users\leong\dev\Factorio-maxxing` and is reached from WSL as
 `/mnt/c/Users/leong/dev/Factorio-maxxing`; the virtualenv carrying FLE is created on the
 Linux filesystem, never on `/mnt/c`. This supersedes the earlier instruction to move the

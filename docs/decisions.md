@@ -650,3 +650,32 @@ backs two Python environments - the Windows `.venv` of phases 1-4, and the WSL v
 that carries FLE. `RealFactorioEnv` (item 17) must therefore import FLE lazily, so that
 `pytest` on Windows, where FLE is absent, still collects and passes. D14 already makes FLE
 an optional extra; this is the reason that choice has to hold.
+
+---
+
+## D30 - Docker Engine inside WSL2, not Docker Desktop
+
+**Decision (research lead).** Docker Engine is installed from Docker's official signed
+apt repository inside the Ubuntu-24.04 WSL2 distro, with `systemd=true` in `/etc/wsl.conf`
+so `dockerd` starts at boot. Docker Desktop is not installed. Build-plan section 23's
+"Docker Desktop with the WSL2 backend" is superseded and that section is updated.
+
+**Why.** FLE is Linux-first - `fle/cluster/run-envs.sh` is bash and cluster startup
+assumes Linux Docker networking. Engine-in-distro puts the containers, the `fle` package
+and our harness in one Linux network namespace, so the RCON path from Python to a
+Factorio container is plain loopback with nothing crossing a distro or OS boundary.
+Docker Desktop would have run the engine in its own utility distro, adding a hop that
+exists only to be debugged later.
+
+Secondary: no Windows-side background service on a laptop, no elevated install, and no
+Docker Desktop licensing question to revisit if this work is ever published or run
+somewhere with a company behind it.
+
+**Cost accepted.** No dashboard - container inspection is `docker ps` / `docker logs`.
+This was weighed against having fewer moving parts in the network path and judged worth
+it, on the same reasoning as D3: when a live run fails, the cause must be attributable,
+and each additional hop is a place a failure can hide.
+
+**Consequence.** Docker is unavailable from Windows; anything touching containers runs
+inside WSL. `systemd=true` is now load-bearing rather than cosmetic - without it
+`dockerd` does not start and every FLE call fails at connection time.
