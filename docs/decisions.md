@@ -777,4 +777,49 @@ the instance.
 5 coal. The observation's value shapes are lists of typed dicts, not the mappings
 `rendering.py` assumes (table in `fle-integration.md`). The adapter is correct and the
 renderer is not; a live goal is pointless until that is fixed, because the policy cannot
-see its own inventory. That is the next task, not this one.
+see its own inventory. That is the next task, not this one. Done in D33.
+
+---
+
+## D33 - The renderer reads live observation shapes, not fixture shapes
+
+**Decision.** `rendering.py` is widened to the shapes a live FLE observation actually
+carries, completing the tightening D16 deferred to Phase 5. No section, header or
+ordering changed - only the parsing beneath them - so prompt structure is unaffected and
+prior trajectories stay comparable.
+
+Six changes, each traced to a measured shape:
+
+1. `_as_counts` accepts `type` and `item` as label keys beside `name`, and `quantity`
+   and `rate` as value keys beside `count` and `amount`. One observation uses three
+   different quantity keys: `quantity` in inventory, `rate` in flows, `amount` in
+   harvested.
+2. `technologies` is counted whether it arrives as a list or a dict. FLE's dataclass
+   says dict; the gym observation delivers a list.
+3. `current_research` arriving as the **literal string `"None"`** is treated as absent.
+   The observation space is typed, so idle research serialises to a truthy string.
+4. A numeric `research_progress` renders as `progress: N`, and only while a research is
+   actually active. Previously an idle `0` rendered as `remaining: 0`, which reads as a
+   research that finished rather than one that never started.
+5. `flows.crafted` records craft *events* - `{crafted_count, inputs, outputs}` - so its
+   outputs are flattened. Inputs are deliberately not shown: the policy needs what it now
+   has, not what was consumed, and the same items already appear under `input`.
+6. `Position` objects and enum members render as `(63, -52)` and `NO_FUEL`. A live
+   observation carries real Python objects, not JSON.
+
+**Why this was invisible.** Every rendering test used `{name: count}` mappings, so the
+suite was green while the renderer was blind. The tests added here transcribe measured
+live observations, and one asserts that the mapping and list shapes render *identically*,
+so fixtures and reality cannot drift apart again.
+
+**Why the fallback stayed.** An unrecognised flow shape still renders as `N items` rather
+than vanishing. A wrong count is a visible defect; a silently dropped section is the
+failure that just cost a live debugging session.
+
+**Verified live** against the container: inventory, entities with position, direction and
+status, research totals, and all four flow categories all render correctly.
+
+**Not changed.** The recorder still stores observations verbatim, numpy scalars and all
+(D6, and the research lead's decision to keep `research` unabridged). Rendering is where
+the policy's view is shaped; recording is where objective state is preserved. This
+change touches only the former.

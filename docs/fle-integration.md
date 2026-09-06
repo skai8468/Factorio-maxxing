@@ -160,20 +160,45 @@ dataclass annotations do not survive the conversion.
 Read off a live `step()` after harvesting coal and stone. These are the shapes
 `rendering.py` actually has to cope with, and it currently does not:
 
-| Key | Real shape | What the renderer assumed |
+| Key | Real shape | What the renderer had assumed |
 |---|---|---|
 | `inventory` | **list** of `{"quantity": np.int32, "type": str}` | dict of `name -> count` |
-| `entities` | list of dicts | list - correct |
+| `entities` | list of dicts, values are **live objects** | list of plain dicts |
+| `entity["position"]` | a `Position` **object**, not a dict | dict with `x`/`y` |
+| `entity["status"]`, `["direction"]` | **enum members** (`EntityStatus.NO_FUEL`) | plain strings |
 | `research.technologies` | **list** of `{"name", "researched", "enabled", "level", "prerequisites", ...}` | `dict` of states |
+| `research.current_research` | the **literal string `"None"`** when idle, not `None` | `None` when idle |
 | `research.research_progress` | **int** (`0`), not a float or ingredient list | ingredient counts |
-| `flows.input/output/crafted/harvested` | **lists**: `[{"type": "coal", "rate": 7}]`, harvested uses `"amount"` | dict-ish counts |
+| `flows.input/output/harvested` | **lists**: `[{"type": "coal", "rate": 7}]`; harvested uses `"amount"` | dict-ish counts |
+| `flows.crafted` | craft **events**: `{"crafted_count", "inputs", "outputs"}` | item counts |
 | `flows` also has | `price_list`, `static_items` | - |
 
-Consequence, observed live: after the agent harvested 5 coal, `render_observation`
-emitted `INVENTORY (none)` - **the policy cannot see its own inventory**. `RESEARCH`
-printed `remaining: 0` from the int, and `FLOWS` degraded to `output: 1 items`. D16
-anticipated exactly this ("confirm against a real observation at Phase 5 and tighten
-then"); this table is that confirmation, and the tightening is still to do.
+Two of these are the gym observation space leaking through. `current_research` is typed
+as a string, so an absent research serialises to `"None"` - which is truthy, and rendered
+as `current: None` until it was special-cased. And `crafted` records *events* rather than
+totals, so it carries what was consumed as well as produced; only the outputs are shown,
+because what the policy needs to know is what it now has.
+
+Consequence, observed live before the fix: after the agent harvested 5 coal,
+`render_observation` emitted `INVENTORY (none)` - **the policy could not see its own
+inventory**. `RESEARCH` printed `remaining: 0`, and `FLOWS` degraded to `output: 1 items`.
+D16 anticipated exactly this ("confirm against a real observation at Phase 5 and tighten
+then"). Fixed and verified live in D33; the renderer now emits:
+
+```
+INVENTORY
+  stone 7
+ENTITIES
+  stone-furnace at (63, -52) facing UP [NO_FUEL]
+RESEARCH
+  current: none
+  researched: 1/196
+FLOWS
+  input: stone 5
+  output: stone-furnace 1, stone 12
+  crafted: stone-furnace 1
+  harvested: stone 12
+```
 
 Note also the **numpy scalars** (`np.int32`): `json.dumps` cannot serialise them.
 `trajectory.py` already passes `default=str`, so a live run does not crash on the first
