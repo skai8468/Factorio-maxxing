@@ -619,3 +619,34 @@ eleven and predates this. The M0/M1 offline work is unaffected - the mock ignore
 submitted code (D10) - but a live run before the reference exists would fail on every
 policy. `docs/fle-integration.md` records what must be captured from the installed
 source and why it must not be written from memory.
+
+---
+
+## D29 - The working copy stays on Windows; the Linux virtualenv lives in WSL
+
+**Decision (research lead).** The canonical Git working copy remains at
+`C:\Users\leong\dev\Factorio-maxxing`, reached from WSL2 as
+`/mnt/c/Users/leong/dev/Factorio-maxxing`. The virtualenv carrying FLE is created on the
+Linux filesystem inside WSL, never on `/mnt/c`. Build-plan section 23's instruction to
+move the repo to `~/projects/factorio-maxxing` is superseded, and that section is updated
+to match. A second working copy inside WSL, synchronised by git, is explicitly rejected.
+
+**Why.** Section 23 gave two reasons to move: OneDrive fights venvs and Docker volumes,
+and `/mnt/c` paths are slow. The first no longer applies - the working copy left OneDrive
+at the machine handoff (section 18a). The second applies to dependency trees and Docker
+volume mounts rather than to source files, and creating the FLE virtualenv on the Linux
+filesystem answers it directly. This package is a handful of small pure-Python modules
+with no build step, so reading them across the 9P mount costs nothing that matters.
+
+Against that, moving the repo into WSL moves the Claude Code sessions with it, and
+sessions are local to the machine and path they run on (section 18a). Two working copies
+were rejected outright: divergence between them would be silent, which is intolerable in
+a project whose sessions deliberately carry no context and treat the repository as the
+source of truth.
+
+**Consequence.** `fle cluster start` and every FLE call run inside WSL2; git, editing and
+the offline suite continue to run on Windows against the same files. One checkout now
+backs two Python environments - the Windows `.venv` of phases 1-4, and the WSL virtualenv
+that carries FLE. `RealFactorioEnv` (item 17) must therefore import FLE lazily, so that
+`pytest` on Windows, where FLE is absent, still collects and passes. D14 already makes FLE
+an optional extra; this is the reason that choice has to hold.

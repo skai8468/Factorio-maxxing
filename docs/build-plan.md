@@ -641,10 +641,15 @@ python -m factorio_maxxing.run --goal "Build a working iron mining setup" \
 wsl --install          # admin, requires reboot
 ```
 
-Then Docker Desktop with the WSL2 backend; move the repo out of OneDrive to
-`~/projects/factorio-maxxing` (OneDrive fights venvs and Docker volumes; `/mnt/c` paths
-are slow); `uv sync`; `fle cluster start`; confirm `list_available_environments()`
-returns task keys.
+Then Docker Desktop with the WSL2 backend. The working copy **stays on Windows** at
+`C:\Users\leong\dev\Factorio-maxxing` and is reached from WSL as
+`/mnt/c/Users/leong/dev/Factorio-maxxing`; the virtualenv carrying FLE is created on the
+Linux filesystem, never on `/mnt/c`. This supersedes the earlier instruction to move the
+repo to `~/projects/factorio-maxxing`: the OneDrive objection lapsed at the machine
+handoff (§18a), the `/mnt/c` speed objection is answered by siting the virtualenv on the
+Linux side, and moving the repo would move the Claude Code sessions with it
+(`decisions.md` D29). Then `uv sync`; `fle cluster start`; confirm
+`list_available_environments()` returns task keys.
 
 ## 24. Live smoke test — harness and environment only, not the experiment
 
