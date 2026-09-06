@@ -823,3 +823,36 @@ status, research totals, and all four flow categories all render correctly.
 (D6, and the research lead's decision to keep `research` unabridged). Rendering is where
 the policy's view is shaped; recording is where objective state is preserved. This
 change touches only the former.
+
+---
+
+## D34 - The cluster runs Factorio 2.0.77, not FLE's pinned 2.0.73
+
+**Decision (research lead).** The Factorio server image is moved from
+`factoriotools/factorio:2.0.73` to `2.0.77`, by patching the three pins in the installed
+FLE package. Backups are kept as `.orig` beside each file, and the change is documented in
+`fle-integration.md` because a reinstall silently reverts it.
+
+**Why.** Watching a run requires a game client, and Factorio multiplayer demands an
+**exact** version match. Steam offers 2.0.77, 2.0.76 and 2.0.72 - but not 2.0.73 - so the
+client cannot be matched to FLE's pin. One side had to move.
+
+**Why the server rather than the client.** FLE's README states **"version 2.0.73 or
+later"**, so 2.0.77 sits inside its stated support; the installed package contains no
+runtime version check and ships no mods beyond `base`, so nothing is compiled or validated
+against a specific build. The alternative - sourcing a 2.0.73 client outside Steam - would
+have left the machine's game install diverging from its store, for no gain.
+
+**Risk accepted, and checked rather than assumed.** A version bump could break FLE's Lua,
+which is loaded into the running game. The live checks were re-run on 2.0.77: all ~48 Lua
+tools load, `harvest_resource` and `craft_item` execute, the observation shapes are
+unchanged, and `render_observation` produces byte-identical output to 2.0.73. If a later
+failure looks Factorio-specific, this is the first thing to suspect and `.orig` is the way
+back.
+
+**Consequence.** The substrate differs from FLE's default by four patch releases. No
+results existed when this was decided, so nothing needed re-running, but any comparison
+against published leaderboard numbers should note it. Build-plan section 23's live setup
+now depends on a manual post-install patch - recorded in `fle-integration.md` rather than
+automated, since build-plan section 9 fixes the repository structure and this is a
+property of the environment, not of the harness.

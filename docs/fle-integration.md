@@ -83,9 +83,35 @@ reproduces the failure.
 `build-essential` and `libpq-dev` first, or the install aborts partway. (`psycopg2-binary`
 is also pulled in, but does not satisfy the `psycopg2` requirement.)
 
-### Cluster - confirmed working 2026-09-06
+### Factorio version - moved to 2.0.77, and the pin is in THREE places
 
-`fle cluster start -n 1 -s open_world` pulls `factoriotools/factorio:2.0.73` and starts
+FLE's README states **"version 2.0.73 or later"** - a minimum, not a pin - and the
+installed package contains no runtime version check and ships no mods beyond `base`. The
+cluster therefore runs **2.0.77** so the server matches a current game client; Steam
+offers 2.0.77/2.0.76/2.0.72 but not 2.0.73, so matching the other way is not possible
+(D34).
+
+**The pin appears three times, and only one of them matters:**
+
+| File | Line | Role |
+|---|---|---|
+| `fle/cluster/run-envs.sh` | 116 | **The effective one.** Regenerates `docker-compose.yml` on every `fle cluster start` |
+| `fle/cluster/run_envs.py` | 62 | `ComposeGenerator.image` class attribute |
+| `fle/cluster/docker-compose.yml` | 5 | Regenerated from the shell script - patching it alone does nothing |
+
+Patching the `.py` and `.yml` and restarting **silently reverts to the old image**,
+because the shell script rewrites the compose file. A `grep` restricted to
+`--include=*.py --include=*.yml` misses `run-envs.sh` entirely; grep without filters.
+(`fle/eval/inspect/sandbox/Dockerfile:16` carries a fourth reference, unused by this
+project.)
+
+**These edits live in `site-packages` and a reinstall discards all three.** `.orig`
+backups sit beside each patched file. After any `uv pip install` that touches FLE,
+re-apply and re-verify.
+
+### Cluster - confirmed working 2026-09-06, re-verified on 2.0.77 2026-09-07
+
+`fle cluster start -n 1 -s open_world` pulls the pinned image and starts
 `cluster-factorio_0-1`, publishing `34197/udp` (game) and `27000->27015/tcp` (RCON).
 `list_available_environments()` then returns **30 task keys**, including `open_play`,
 `open_play_production`, and throughput tasks from `iron_ore_throughput` up to
