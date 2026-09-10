@@ -425,7 +425,21 @@ cd ~/fle-work && ~/venvs/fle/bin/fle sprites
 ```
 
 Sprites come from the Hugging Face dataset `Noddybear/fle_images`, which is the FLE
-author's own.
+author's own. They land in `.fle/sprites` **under the directory you ran it from** -
+`~/fle-work/.fle/sprites` if you followed the instruction above.
+
+**And that is not where a run will look for them.** `render/utils.py` walks up from the
+*current working directory* looking for `.fle/sprites`, then tries `~/.fle/sprites`,
+then `FLE_SPRITES_DIR`. A run started in the repo on `/mnt/c` finds none of those, so it
+renders blank frames while reporting nothing but a startup warning. The give-away is a
+`map_image` of about 12,000 base64 characters, identical every step.
+
+Set the variable before a run with vision on - it belongs beside the credentials in
+`~/fle-work/.env.local`, which is sourced anyway:
+
+```bash
+export FLE_SPRITES_DIR=$HOME/fle-work/.fle/sprites
+```
 
 **Then run with rendering on**, either via `--vision` or the `enable_vision` key that
 `configs/live-watchable.json` already sets:

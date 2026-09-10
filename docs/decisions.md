@@ -1044,3 +1044,45 @@ figure is the cost of nothing. It is corrected once a run with real sprites exis
 a sidecar directory. Inline keeps the recorder honestly passive and the trajectory
 self-contained; a sidecar keeps trajectories small enough to read. That trade-off is the
 research lead's, and nothing here forecloses it.
+
+---
+
+## D39 - The pause is cleared at construction, because FLE's own flag lies
+
+**Decision.** `RealFactorioEnv.__init__` forces the game unpaused after construction,
+by setting FLE's `_is_paused` attribute to `True` and then calling `unpause()`. This
+runs on every construction, not only when `pause_after_action` is off.
+
+**Why.** FLE keeps pause state in a Python attribute:
+
+```python
+self._is_paused = False        # instance.py:51, at construction, never queried
+def unpause(self):
+    if self._is_paused:        # instance.py:88, returns early otherwise
+```
+
+The attribute is initialised to `False` whatever the game is actually doing, and
+nothing reconciles it. A run that ends with `pause_after_action` leaves
+`game.tick_paused = true` set in the *game*; the next process constructs a fresh
+instance whose flag says "running", so `set_speed_and_unpause` at each step start
+silently sends nothing and the pause survives.
+
+**Measured, and it is total.** The first run under `live-watchable.json` inherited a
+pause from the run before it. FLE's tick counter read 420 at step 3 and 420 at step 12 -
+seventeen seconds of game time across fourteen steps. Every `move_to` failed with
+`Could not get path to (x, y): Path request timed out after 10 attempts`, because path
+requests resolve over game ticks and there were none. The character never left `(2, 2)`,
+so every placement then failed as "too far away". The agent spent the whole run
+reasoning about positioning while the world was frozen underneath it.
+
+**Why unconditionally.** A paused game is inherited the same way whatever this run
+intends afterwards, and `pause_after_action=True` does not save a run: the same stale
+flag defeats the unpause at step start. Turning our pause off stops us *adding* a pause;
+it does nothing about one already there. Reconciling at construction makes every run
+start from a known state, which is what a trajectory needs in order to be comparable.
+
+**Why not patch FLE.** This one is reachable from outside - the attribute is public
+enough to set - so the harness absorbs it rather than adding a seventh site to the list
+that a reinstall silently reverts (D37). Touching a private attribute is recorded in a
+docstring and covered by a test that mirrors the real guard, so an upstream fix that
+makes this redundant will not break anything.

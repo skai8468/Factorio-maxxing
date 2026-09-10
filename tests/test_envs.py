@@ -149,11 +149,31 @@ class _FLEAction:
         self.game_state = game_state
 
 
+class _FakeInstance:
+    """Stands in for FLE's FactorioInstance, whose pause flag is the point here.
+
+    Mirrors the real guard: unpause() does nothing unless the flag says paused, which
+    is exactly the bug D39 works around.
+    """
+
+    def __init__(self):
+        self._is_paused = False
+        self.unpause_calls = 0
+        self.rcon_unpaused = False
+
+    def unpause(self):
+        self.unpause_calls += 1
+        if self._is_paused:
+            self._is_paused = False
+            self.rcon_unpaused = True
+
+
 class _FakeGymEnv:
     def __init__(self, reset_result):
         self._reset_result = reset_result
         self.stepped: list[_FLEAction] = []
         self.closed = False
+        self.instance = _FakeInstance()
 
     def reset(self):
         return self._reset_result
@@ -290,6 +310,38 @@ def test_the_pause_can_be_turned_off_for_a_watchable_run(monkeypatch):
     env = RealFactorioEnv(pause_after_action=False)
     assert fake_env.pause_after_action is False
     assert env.pause_after_action is False
+
+
+def test_construction_clears_a_pause_left_by_an_earlier_run(monkeypatch):
+    """D39: FLE's unpause no-ops when its own flag disagrees with the game.
+
+    The flag is False on a fresh instance whatever the game is actually doing, so
+    without this the world never ticks and the agent cannot move.
+    """
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv()
+    assert fake_env.instance.rcon_unpaused is True
+    assert fake_env.instance._is_paused is False
+
+
+def test_the_pause_is_cleared_even_when_pausing_stays_on(monkeypatch):
+    """A paused game is inherited the same way whatever this run intends afterwards."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(pause_after_action=True)
+    assert fake_env.instance.rcon_unpaused is True
+
+
+def test_an_environment_without_an_instance_is_tolerated(monkeypatch):
+    """Defensive: FLE moving the attribute must not take every live run with it."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    del fake_env.instance
+    RealFactorioEnv()  # must not raise
 
 
 def test_task_key_and_run_idx_reach_the_factory(monkeypatch):
