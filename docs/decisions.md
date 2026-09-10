@@ -909,3 +909,96 @@ three empty errors and no detection.
 **Not changed.** The recorder still stores the observation verbatim; `info` is read for
 the error field only, not recorded wholesale. The verifier is untouched - errors inform
 stuckness, never completion (D6, D7).
+
+---
+
+## D36 - The game pause between steps is a knob, defaulted to FLE's behaviour
+
+**Decision.** `RealFactorioEnv` takes `pause_after_action`, defaulting to `True`, and a
+config key of the same name carries it; `--no-pause` turns it off for one run.
+`configs/live-watchable.json` pairs it with `stuck_threshold: 8` and
+`max_interventions_without_progress: 5`.
+
+**Why.** FLE freezes the game tick after every step - `pause()` sends
+`/sc game.tick_paused = true` - so no world time passes while the policy and verifier
+are called. That is correct for measured runs: it makes a trajectory independent of how
+long the model took to answer. It also makes a run impossible to watch. A Factorio client
+connected to a server whose tick has stopped reports "server is not responding" and
+eventually drops, which is what happened on the first live run: the pause held for the
+whole of an intervention, because the harness was blocked waiting for a human to type.
+
+**Why a knob rather than a change of default.** Turning the pause off means the world
+moves while the agent thinks, so the observation the policy reasoned about is slightly
+stale when its code lands. That is a real cost to comparability and it should never be
+paid by accident. Off is for demonstrations; measured runs keep FLE's default, and the
+default in code is FLE's so that omitting the key changes nothing.
+
+**Why it is set after construction.** `make_factorio_env` builds
+`FactorioGymEnv(instance=, task=, enable_vision=)` and forwards nothing else, so there is
+no constructor route to the flag short of reimplementing the factory. FLE reads the
+attribute once per step, so assignment is sufficient. A test asserts the flag lands on
+FLE's environment and not merely on ours, since ours is not what reads it.
+
+**The thresholds are config, not code.** With `verification_interval: 1` and
+`stuck_threshold: 3`, the non-DONE detector fires every third step, and since D24 resets
+the window on every request, it keeps firing every third step. With
+`max_interventions_without_progress: 3` that caps a run at nine steps regardless of
+`max_steps: 32` - observed live, where the run aborted at step 8. Raising the two numbers
+buys a run room without touching the architecture.
+
+**Known and not addressed here.** `ConsecutiveNonDoneDetector` cannot distinguish
+legitimate incomplete progress from a stuck agent: it counts NOT DONE verdicts and reads
+neither `history` nor `flows`, though both are passed to it. `flows` is the obvious
+progress signal and is currently threaded through every detector and read by none. A
+progress-aware detector is on the do-not-build list (CLAUDE.md, "advanced
+Factorio-specific stuck detectors") and what counts as stuck is the research lead's, so
+this is recorded rather than fixed. It matters for the metric: if the harness asks every
+`stuck_threshold` steps by construction, the absolute intervention count measures the
+config. The `NoHuman` vs `InteractiveHuman` delta is unaffected, since both run the same
+configuration.
+
+---
+
+## D37 - FLE's error truncation is patched out, because it makes errors unreadable
+
+**Decision (research lead).** The six sites where FLE reduces an exception message to
+everything after its last colon are patched to keep the whole message. `.orig` backups
+sit beside each file. The procedure is recorded in `fle-integration.md` rather than
+committed as a script: build-plan section 9 fixes the repository structure, and like the
+version pins this is a property of the environment, not of the harness (D34).
+
+**Why.** Measured on the first live run. FLE's Lua raises
+
+```
+No burner-mining-drill in inventory. Current inventory: empty
+```
+
+and `tool.py::get_error_message` does `response.split(":")[-1]`, so what reaches the
+policy is
+
+```
+Could not place burner-mining-drill at (-15.5, -50.5), empty
+```
+
+The agent read `empty` as "that tile is empty" and spent eight steps and two human
+interventions hunting for better ground, when it simply had no drill. Step 7 is the
+proof: the same failure rendered as `..., coal=20` after it had harvested coal - the
+tail is the inventory listing, not a description of the terrain.
+
+**Six sites, one pattern.** `env/tools/tool.py` holds the shared
+`get_error_message`; `harvest_resource`, `get_resource_patch`, `insert_item`,
+`set_entity_recipe` and `place_entity` each repeat the expression inline. Every one is
+building error text - none is parsing - so removing `.split(":")[-1]` is safe at all six.
+
+**Why this is worth a dependency patch.** It is the research question in miniature. The
+agent did not fail at Factorio; it failed because the harness handed it a destroyed
+error message. Whether restoring the message reduces the intervention count is directly
+measurable: same goal, same model, truncated versus full, count interventions. That is a
+harness-engineering result rather than a model result, which is what the thesis is about.
+
+**Risk.** The full message is longer, so prompts grow slightly. The quote-stripping that
+follows the truncation is left alone; it is cosmetic, and a minimal patch is easier to
+re-apply.
+
+**These edits live in `site-packages` and a reinstall discards them**, exactly as with
+the version pins (D34). Re-run the script after any `uv pip install` that touches FLE.

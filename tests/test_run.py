@@ -66,6 +66,7 @@ def test_defaults_match_the_documented_config():
     assert config.max_steps == 32
     assert config.history_length == 16
     assert config.environment == "mock"
+    assert config.pause_after_action is True
     assert config.trajectory_dir == "trajectories"
 
 
@@ -193,6 +194,48 @@ def test_live_passes_the_configured_task_key(monkeypatch):
     monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
     build_environment(Config(environment="live", task_key="iron_plate_throughput"))
     assert seen["task_key"] == "iron_plate_throughput"
+
+
+def test_live_passes_the_configured_pause(monkeypatch):
+    """D36: FLE reads this flag, so it has to survive the trip through run.py."""
+    seen = {}
+
+    def record(task_key, pause_after_action, **kwargs):
+        seen["pause_after_action"] = pause_after_action
+        return object()
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
+    build_environment(Config(environment="live", pause_after_action=False))
+    assert seen["pause_after_action"] is False
+
+    build_environment(Config(environment="live"))
+    assert seen["pause_after_action"] is True
+
+
+def test_no_pause_flag_turns_the_pause_off():
+    assert resolve_config(parse("--goal", "g")).pause_after_action is True
+    assert resolve_config(parse("--goal", "g", "--no-pause")).pause_after_action is False
+
+
+def test_an_absent_no_pause_flag_does_not_override_a_config_file(tmp_path):
+    """store_true defaults to False, which would silently beat a config file's True."""
+    path = tmp_path / "c.json"
+    path.write_text('{"pause_after_action": true}', encoding="utf-8")
+    config = resolve_config(parse("--goal", "g", "--config", str(path)))
+    assert config.pause_after_action is True
+
+
+def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
+    """The demonstration config: a run you can watch, that does not ask every 3 steps."""
+    data = json.loads(Path("configs/live-watchable.json").read_text(encoding="utf-8"))
+    assert set(data) == {field.name for field in fields(Config)}
+
+    config = Config(**data)
+    assert config.environment == "live"
+    assert config.pause_after_action is False
+    assert config.stuck_threshold == 8
+    assert config.max_interventions_without_progress == 5
+    assert Path(config.api_reference).is_file()
 
 
 def test_task_key_defaults_to_open_play():

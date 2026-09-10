@@ -3,14 +3,14 @@
   "verifier_model": "claude-haiku-4-5",
   "human": "interactive",
   "stuck_detector": "consecutive_failures+error_signature",
-  "stuck_threshold": 3,
-  "max_interventions_without_progress": 3,
+  "stuck_threshold": 8,
+  "max_interventions_without_progress": 5,
   "verification_interval": 1,
   "max_steps": 32,
   "history_length": 16,
-  "environment": "mock",
+  "environment": "live",
   "task_key": "open_play",
-  "pause_after_action": true,
+  "pause_after_action": false,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"
 }

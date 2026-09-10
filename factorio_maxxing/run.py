@@ -113,6 +113,13 @@ class Config:
     `open_play` is a neutral sandbox, not a task whose success criteria we adopt: the
     Goal drives the policy and our own verifier decides completion (D6). FLE's task
     verification stays unused at M0/M1."""
+    pause_after_action: bool = True
+    """Whether FLE freezes the game tick between steps. Used only when live.
+
+    FLE's default is True, which keeps world time from passing while the policy and
+    verifier are called. False lets the world run on, which is what makes a run
+    watchable through a game client, at the cost of a slightly stale observation
+    (D36). Demonstrations turn it off; measured runs do not."""
     trajectory_dir: str = "trajectories"
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
@@ -185,6 +192,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--api-reference", help="file describing the environment API for the policy"
     )
     parser.add_argument("--task-key", help="FLE task backing a live run")
+    parser.add_argument(
+        "--no-pause",
+        action="store_true",
+        help="let the world run between steps, so a live run can be watched",
+    )
     return parser
 
 
@@ -208,6 +220,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "trajectory_dir": args.trajectory_dir,
         "api_reference": args.api_reference,
         "task_key": args.task_key,
+        "pause_after_action": False if args.no_pause else None,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
@@ -231,7 +244,9 @@ def _build_live_environment(config: Config) -> EnvProtocol:
     is allowed to surface as a bare traceback.
     """
     try:
-        return RealFactorioEnv(task_key=config.task_key)
+        return RealFactorioEnv(
+            task_key=config.task_key, pause_after_action=config.pause_after_action
+        )
     except ImportError as exc:
         raise ConfigError(
             "live Factorio needs FLE installed: pip install -e '.[fle]' inside the "

@@ -102,6 +102,13 @@ class RealFactorioEnv:
     ``enable_vision`` defaults off. Measured on a live world, a rendered map image adds
     roughly 1.1 MB to every observation and 1.2 s to every step, and it is recorded but
     never shown to the policy (docs/fle-integration.md).
+
+    ``pause_after_action`` defaults to FLE's own ``True``, which freezes the game tick
+    between steps so no world time passes while the policy and verifier are being
+    called. Turning it off lets the world keep running - which is what makes a run
+    watchable through a game client, since a paused server reads as an unresponsive one
+    - at the cost of the observation being slightly stale by the time the next action
+    lands. Off is for demonstrations; measured runs keep the default (D36).
     """
 
     def __init__(
@@ -110,6 +117,7 @@ class RealFactorioEnv:
         run_idx: int = 0,
         *,
         enable_vision: bool = False,
+        pause_after_action: bool = True,
     ):
         from fle.env.gym_env.action import Action as FLEAction
         from fle.env.gym_env.registry import (
@@ -124,8 +132,15 @@ class RealFactorioEnv:
         info["enable_vision"] = enable_vision
 
         self.task_key = task_key
+        self.pause_after_action = pause_after_action
         self._fle_action = FLEAction
         self._env = make_factorio_env(spec=GymEnvironmentSpec(**info), run_idx=run_idx)
+
+        # Set after construction rather than passed in: make_factorio_env builds
+        # FactorioGymEnv(instance=, task=, enable_vision=) and forwards nothing else,
+        # so there is no constructor route to this flag short of reimplementing the
+        # factory. FLE reads the attribute once per step, so assignment is enough.
+        self._env.pause_after_action = pause_after_action
 
     def reset(self) -> Observation:
         """Return the observation alone, discarding FLE's ``info``.

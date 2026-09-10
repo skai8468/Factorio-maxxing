@@ -339,6 +339,78 @@ defines the enum, so a live policy has what it needs - but it is the first thing
 run gets wrong, and it is what the offline demo fixtures in `run.py` do, since the mock
 never reads the code they submit.
 
+### Error truncation - FLE destroys its own messages, and the fix is a patch
+
+**The message the agent sees is the tail of the real one.** `env/tools/tool.py` reduces
+every exception to `response.split(":")[-1]`, so
+
+```
+No burner-mining-drill in inventory. Current inventory: empty
+```
+
+reaches the policy as
+
+```
+Could not place burner-mining-drill at (-15.5, -50.5), empty
+```
+
+Measured live, this cost eight steps and two human interventions on the first live run:
+the agent read `empty` as a statement about the terrain and went looking for better
+ground. The give-away is that the tail changes with the inventory - after harvesting
+coal the same failure rendered `..., coal=20`.
+
+**Six sites, all of them error text, none of them parsing:**
+
+| File | Form |
+|---|---|
+| `env/tools/tool.py` | `get_error_message`, the shared one |
+| `env/tools/agent/place_entity/client.py` | inline, twice over |
+| `env/tools/agent/insert_item/client.py` | inline |
+| `env/tools/agent/harvest_resource/client.py` | inline |
+| `env/tools/agent/get_resource_patch/client.py` | inline |
+| `env/tools/agent/set_entity_recipe/client.py` | inline |
+
+Patching just `tool.py` is not enough - the five tools repeat the expression themselves.
+
+**Apply it** from `~/fle-work`, with the FLE virtualenv. Idempotent; re-running is a
+no-op, and `.orig` backups are written on the first pass:
+
+```bash
+~/venvs/fle/bin/python - <<'EOF'
+import os, shutil, fle
+TRUNCATION = '.split(":")[-1]'
+TARGETS = [
+    "env/tools/tool.py",
+    "env/tools/agent/harvest_resource/client.py",
+    "env/tools/agent/get_resource_patch/client.py",
+    "env/tools/agent/insert_item/client.py",
+    "env/tools/agent/set_entity_recipe/client.py",
+    "env/tools/agent/place_entity/client.py",
+]
+root = os.path.dirname(fle.__file__)
+for relative in TARGETS:
+    path = os.path.join(root, relative)
+    text = open(path, encoding="utf-8").read()
+    if TRUNCATION not in text:
+        print("already  ", relative); continue
+    if not os.path.exists(path + ".orig"):
+        shutil.copyfile(path, path + ".orig")
+    open(path, "w", encoding="utf-8").write(text.replace(TRUNCATION, ""))
+    print("patched  ", relative)
+EOF
+```
+
+**Check whether it is applied**, which matters because a reinstall reverts it:
+
+```bash
+grep -rc 'split(":")\[-1\]' ~/venvs/fle/lib/python3.13/site-packages/fle/env/tools/tool.py
+```
+
+`0` means patched. To revert, copy each `.orig` back over its file.
+
+**These edits live in `site-packages` and a reinstall discards all six**, exactly as with
+the version pins above. Re-apply after any `uv pip install` that touches FLE (D37).
+
 ### Cost of `enable_vision` - measured 2026-09-06
 
 Rendering happens in the Python process (`namespace._render().to_base64()`), not in the

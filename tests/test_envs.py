@@ -272,6 +272,26 @@ def test_vision_can_be_enabled(monkeypatch):
     assert captured["spec"].enable_vision is True
 
 
+def test_the_game_is_paused_between_steps_by_default(monkeypatch):
+    """D36: FLE's own default, and the one measured runs keep."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv()
+    assert fake_env.pause_after_action is True
+    assert env.pause_after_action is True
+
+
+def test_the_pause_can_be_turned_off_for_a_watchable_run(monkeypatch):
+    """The flag has to land on FLE's env, not just on ours - FLE is what reads it."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv(pause_after_action=False)
+    assert fake_env.pause_after_action is False
+    assert env.pause_after_action is False
+
+
 def test_task_key_and_run_idx_reach_the_factory(monkeypatch):
     from factorio_maxxing.envs import RealFactorioEnv
 
