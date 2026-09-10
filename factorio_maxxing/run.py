@@ -113,6 +113,12 @@ class Config:
     `open_play` is a neutral sandbox, not a task whose success criteria we adopt: the
     Goal drives the policy and our own verifier decides completion (D6). FLE's task
     verification stays unused at M0/M1."""
+    enable_vision: bool = False
+    """Whether FLE renders a map image into every observation. Used only when live.
+
+    Off by default: the image is never shown to the policy, so it buys nothing during
+    a run. It is what a timelapse is built from afterwards, and it costs render time
+    per step plus a base64 PNG in every recorded observation (D38)."""
     pause_after_action: bool = True
     """Whether FLE freezes the game tick between steps. Used only when live.
 
@@ -193,6 +199,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--task-key", help="FLE task backing a live run")
     parser.add_argument(
+        "--vision",
+        action="store_true",
+        help="render a map image each step, so a timelapse can be built afterwards",
+    )
+    parser.add_argument(
         "--no-pause",
         action="store_true",
         help="let the world run between steps, so a live run can be watched",
@@ -221,6 +232,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "api_reference": args.api_reference,
         "task_key": args.task_key,
         "pause_after_action": False if args.no_pause else None,
+        "enable_vision": True if args.vision else None,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
@@ -245,7 +257,9 @@ def _build_live_environment(config: Config) -> EnvProtocol:
     """
     try:
         return RealFactorioEnv(
-            task_key=config.task_key, pause_after_action=config.pause_after_action
+            task_key=config.task_key,
+            pause_after_action=config.pause_after_action,
+            enable_vision=config.enable_vision,
         )
     except ImportError as exc:
         raise ConfigError(

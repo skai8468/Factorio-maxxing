@@ -123,3 +123,38 @@ def read_trajectory(path: Path | str) -> list[dict[str, Any]]:
     """Read a trajectory back, in write order. Blank lines are ignored."""
     with Path(path).open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+
+def extract_map_images(path: Path | str, out_dir: Path | str) -> list[Path]:
+    """Write each step's rendered map image out as a PNG, in step order.
+
+    Reading is the counterpart of recording, so it lives here (D38). The images are
+    only present when a run was made with ``enable_vision``; a run without it yields
+    an empty list rather than an error, since that is the normal case.
+
+    Files are named by step so they sort correctly and so a gap is visible: a step
+    whose render failed is skipped, not renumbered over.
+    """
+    import base64
+    import binascii
+
+    directory = Path(out_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    written = []
+    for record in read_trajectory(path):
+        if record.get("type") != "step":
+            continue
+        encoded = (record.get("observation") or {}).get("map_image")
+        if not encoded:
+            continue
+        try:
+            data = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError):
+            continue
+        if not data:
+            continue
+        target = directory / f"step-{record['step']:04d}.png"
+        target.write_bytes(data)
+        written.append(target)
+    return written

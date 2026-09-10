@@ -411,6 +411,46 @@ grep -rc 'split(":")\[-1\]' ~/venvs/fle/lib/python3.13/site-packages/fle/env/too
 **These edits live in `site-packages` and a reinstall discards all six**, exactly as with
 the version pins above. Re-apply after any `uv pip install` that touches FLE (D37).
 
+### Building a timelapse of a run - the supported way to watch
+
+A game client is the wrong tool (D38): FLE freezes the tick between steps, and
+`create_agent_characters` destroys every character on the surface before making the
+agent's, which is an unowned entity with no player attached. Render instead.
+
+**Once**, to fetch the graphics. Without this FLE prints `Sprites not found ... Vision
+rendering will produce empty images` at startup and renders blank frames:
+
+```bash
+cd ~/fle-work && ~/venvs/fle/bin/fle sprites
+```
+
+Sprites come from the Hugging Face dataset `Noddybear/fle_images`, which is the FLE
+author's own.
+
+**Then run with rendering on**, either via `--vision` or the `enable_vision` key that
+`configs/live-watchable.json` already sets:
+
+```bash
+~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."
+```
+
+**Extract the frames and assemble them.** `extract_map_images` writes `step-NNNN.png`
+in step order, skipping any step whose render is missing or corrupt rather than
+renumbering over the gap:
+
+```bash
+python -c "from factorio_maxxing.trajectory import extract_map_images as e; print(len(e('trajectories/<run>.jsonl','frames')))"
+
+ffmpeg -framerate 2 -pattern_type glob -i 'frames/step-*.png' -c:v libx264 -preset slow -crf 24 -pix_fmt yuv420p -vf "scale=iw:-2" timelapse.mp4
+```
+
+Two frames per second gives a 32-step run about sixteen seconds. Raise `-framerate` for
+a longer run, lower it to dwell on each step.
+
+**Note the trajectory cost.** The recorder stores observations verbatim (D6), so every
+rendered frame sits in the JSONL as base64. A run with vision on produces a much larger
+trajectory than one without, and trajectories are what analysis reads.
+
 ### Cost of `enable_vision` - measured 2026-09-06
 
 Rendering happens in the Python process (`namespace._render().to_base64()`), not in the

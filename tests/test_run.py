@@ -67,6 +67,7 @@ def test_defaults_match_the_documented_config():
     assert config.history_length == 16
     assert config.environment == "mock"
     assert config.pause_after_action is True
+    assert config.enable_vision is False
     assert config.trajectory_dir == "trajectories"
 
 
@@ -212,6 +213,32 @@ def test_live_passes_the_configured_pause(monkeypatch):
     assert seen["pause_after_action"] is True
 
 
+def test_live_passes_the_configured_vision(monkeypatch):
+    seen = {}
+
+    def record(task_key, pause_after_action, enable_vision, **kwargs):
+        seen["enable_vision"] = enable_vision
+        return object()
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
+    build_environment(Config(environment="live", enable_vision=True))
+    assert seen["enable_vision"] is True
+
+    build_environment(Config(environment="live"))
+    assert seen["enable_vision"] is False
+
+
+def test_vision_flag_turns_rendering_on():
+    assert resolve_config(parse("--goal", "g")).enable_vision is False
+    assert resolve_config(parse("--goal", "g", "--vision")).enable_vision is True
+
+
+def test_an_absent_vision_flag_does_not_override_a_config_file(tmp_path):
+    path = tmp_path / "c.json"
+    path.write_text('{"enable_vision": true}', encoding="utf-8")
+    assert resolve_config(parse("--goal", "g", "--config", str(path))).enable_vision
+
+
 def test_no_pause_flag_turns_the_pause_off():
     assert resolve_config(parse("--goal", "g")).pause_after_action is True
     assert resolve_config(parse("--goal", "g", "--no-pause")).pause_after_action is False
@@ -233,6 +260,7 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     config = Config(**data)
     assert config.environment == "live"
     assert config.pause_after_action is False
+    assert config.enable_vision is True
     assert config.stuck_threshold == 8
     assert config.max_interventions_without_progress == 5
     assert Path(config.api_reference).is_file()

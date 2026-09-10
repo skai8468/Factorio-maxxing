@@ -11,7 +11,11 @@ import pytest
 
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.llm import LLMResponse
-from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
+from factorio_maxxing.trajectory import (
+    TrajectoryRecorder,
+    extract_map_images,
+    read_trajectory,
+)
 from factorio_maxxing.verifier import VerificationResult
 
 GOAL = Goal(description="Produce iron plates")
@@ -241,3 +245,67 @@ def test_read_trajectory_ignores_blank_lines(tmp_path):
     path = tmp_path / "run.jsonl"
     path.write_text('{"type": "step"}\n\n{"type": "llm_call"}\n', encoding="utf-8")
     assert [r["type"] for r in read_trajectory(path)] == ["step", "llm_call"]
+
+
+# --- map image extraction (D38) -------------------------------------------------
+
+
+def _trajectory_with_images(tmp_path, images):
+    """Write a trajectory whose steps carry the given map_image values."""
+    path = tmp_path / "run.jsonl"
+    with TrajectoryRecorder(path, run_id="run-1") as recorder:
+        for step, image in enumerate(images):
+            observation = {"inventory": {}, "map_image": image}
+            recorder.record_step(step, GOAL, "code", observation, 0.0, [])
+    return path
+
+
+def test_map_images_are_written_in_step_order(tmp_path):
+    import base64
+
+    first = base64.b64encode(b"PNG-one").decode()
+    second = base64.b64encode(b"PNG-two").decode()
+    path = _trajectory_with_images(tmp_path, [first, second])
+
+    written = extract_map_images(path, tmp_path / "frames")
+
+    assert [p.name for p in written] == ["step-0000.png", "step-0001.png"]
+    assert written[0].read_bytes() == b"PNG-one"
+    assert written[1].read_bytes() == b"PNG-two"
+
+
+def test_a_run_without_vision_yields_no_images(tmp_path):
+    """The normal case: vision is off, so there is nothing to extract."""
+    path = _trajectory_with_images(tmp_path, ["", ""])
+    assert extract_map_images(path, tmp_path / "frames") == []
+
+
+def test_step_numbering_survives_a_missing_render(tmp_path):
+    """A skipped step must leave a gap, not renumber the ones after it."""
+    import base64
+
+    image = base64.b64encode(b"frame").decode()
+    path = _trajectory_with_images(tmp_path, [image, "", image])
+
+    written = extract_map_images(path, tmp_path / "frames")
+    assert [p.name for p in written] == ["step-0000.png", "step-0002.png"]
+
+
+def test_an_unreadable_image_is_skipped_rather_than_raising(tmp_path):
+    """A corrupt render must not cost the whole extraction."""
+    import base64
+
+    good = base64.b64encode(b"frame").decode()
+    path = _trajectory_with_images(tmp_path, ["not valid base64!!", good])
+
+    written = extract_map_images(path, tmp_path / "frames")
+    assert [p.name for p in written] == ["step-0001.png"]
+
+
+def test_the_output_directory_is_created(tmp_path):
+    import base64
+
+    path = _trajectory_with_images(tmp_path, [base64.b64encode(b"f").decode()])
+    target = tmp_path / "nested" / "frames"
+    assert extract_map_images(path, target)
+    assert target.is_dir()

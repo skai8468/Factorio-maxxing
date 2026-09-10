@@ -10,6 +10,7 @@
   "history_length": 16,
   "environment": "live",
   "task_key": "open_play",
+  "enable_vision": true,
   "pause_after_action": false,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"

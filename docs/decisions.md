@@ -1002,3 +1002,45 @@ re-apply.
 
 **These edits live in `site-packages` and a reinstall discards them**, exactly as with
 the version pins (D34). Re-run the script after any `uv pip install` that touches FLE.
+
+---
+
+## D38 - Watching a run means rendering it, not spectating it
+
+**Decision.** `enable_vision` becomes a config key and a `--vision` flag, off by
+default, and `trajectory.py` gains `extract_map_images`, which writes each step's
+render out as `step-NNNN.png`. Video assembly is one `ffmpeg` command, documented in
+`fle-integration.md` rather than wrapped in code, so the harness keeps its empty
+runtime dependency list.
+
+**Why not a game client.** Watching a live FLE run through Factorio's own client fights
+the environment on two fronts, both measured. FLE freezes the tick between steps (D36),
+so a connected client reports the server as unresponsive and eventually drops. And
+`create_agent_characters` **destroys every character entity on the surface** before
+creating the agent's, so a spectator who joined before `reset()` is deleted by it; the
+agent's character is then a free-standing entity in `storage.agent_characters`, with no
+player attached, which does not appear in the player list and walks off to wherever the
+ore is. Both are surmountable - the pause is now a flag, and a spectator can teleport to
+the entity - but the result is a camera that has to be chased by hand.
+
+**What upstream does.** The FLE team's own `claude-code-plays-factorio` exposes
+`render(x, y)` and `fle://render/{x}/{y}` and documents no live-spectate path at all.
+The real-time Factorio spectating that circulates publicly (Ryan Madden's writeup, a
+Nintendo Switch joining over the LAN) drives a **plain headless server over RCON**, not
+FLE, so it meets neither the pause nor the character handling. Rendering is the
+supported path, not a workaround.
+
+**Why off by default.** The image is never shown to the policy, so it buys a run
+nothing. It costs render time per step and puts a base64 PNG in every recorded
+observation, which the recorder stores verbatim (D6). A 32-step run with vision on is a
+much larger trajectory, and trajectories are the analysis artefact.
+
+**A measurement to distrust.** `fle-integration.md` records vision costing 41,455 ->
+53,903 bytes of observation JSON. That was taken with **sprites not installed**, which
+FLE warns about at startup and which makes it render blank images - so the recorded
+figure is the cost of nothing. It is corrected once a run with real sprites exists.
+
+**Not decided here.** Whether the image should stay inline in the trajectory or move to
+a sidecar directory. Inline keeps the recorder honestly passive and the trajectory
+self-contained; a sidecar keeps trajectories small enough to read. That trade-off is the
+research lead's, and nothing here forecloses it.
