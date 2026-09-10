@@ -1219,3 +1219,49 @@ running game, and riskier than the two already carried (D34, D37). Not attempted
 as gameplay. The renderer cannot draw entities (D41) and a client cannot connect (this
 entry). What a run can produce is the terminal and the trajectory, which is what
 demonstrations should be built from until one of the two is fixed.
+
+---
+
+## D43 - Correcting D42: the save fails on Lua functions, and that is architectural
+
+**Correction.** D42 attributed the crash to a stale `LuaEntity` reference. That was
+wrong - it read an unrelated line from the same log. The actual error, from the save
+itself:
+
+```
+Error while running event level::on_save()
+Cannot serialise lua functions
+```
+
+**The real mechanism.** Factorio cannot save a game whose `storage` table contains Lua
+functions, and that is precisely how FLE injects its tools. Each of the ~48 tool scripts
+is sent over RCON and assigns a function into `storage`:
+
+```lua
+storage.utils.serialize_entity = function(entity) ... end
+storage.actions.create_agent_characters = function(num_agents) ... end
+```
+
+So **every** map save fails once FLE's Lua is loaded, and a joining client always forces
+one. Nothing about entity lifetimes, `reset()`, or timing is involved.
+
+**Which finally explains 2026-09-07.** That client joined a **bare cluster before any run
+had injected tools**. `storage` was empty, the save succeeded, the join worked. The note
+was accurate and its conclusion was not: it recorded a property of an untouched world as
+though it were a property of the server.
+
+**Consequence, and it is a hard stop.** This is not patchable in the sense D42 implied.
+Making saves work would mean moving every tool out of `storage` and into a real Factorio
+mod - a rewrite of FLE's injection mechanism, not a patch to it. Watching or filming an
+FLE run through a game client is therefore not available to this project.
+
+**Combined with D41** - the renderer draws no entities - there is no route to gameplay
+footage of an agent driven through FLE. Demonstrations must be built from the terminal
+and the trajectory. This is a property of the environment, not a gap in the harness, and
+it should be stated as such rather than re-investigated.
+
+**What was eliminated on the way, and remains true and useful:** the UDP handshake works
+end to end through Docker's publishing, mirrored WSL networking makes `localhost:34197`
+work and removes the shifting VM address, the Hyper-V firewall rule is correct, and
+`/promote` over RCON grants the admin rights `/c` needs. A client can still join a
+cluster on which no run has been started.
