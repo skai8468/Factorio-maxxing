@@ -7,7 +7,7 @@ deliberately does not read the submitted Python: deciding transitions from arbit
 code would mean building a fake Factorio. Real Factorio behaviour belongs in FLE.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -109,6 +109,11 @@ class RealFactorioEnv:
     watchable through a game client, since a paused server reads as an unresponsive one
     - at the cost of the observation being slightly stale by the time the next action
     lands. Off is for demonstrations; measured runs keep the default (D36).
+
+    ``starting_inventory`` stocks the agent after reset. Empty by default, which is what
+    ``open_play`` gives: nothing at all. A goal phrased as "place a burner mining drill"
+    therefore silently includes crafting one from raw stone and ore, so what the agent
+    begins with decides what the goal actually measures (D40).
     """
 
     def __init__(
@@ -118,6 +123,7 @@ class RealFactorioEnv:
         *,
         enable_vision: bool = False,
         pause_after_action: bool = True,
+        starting_inventory: Mapping[str, int] | None = None,
     ):
         from fle.env.gym_env.action import Action as FLEAction
         from fle.env.gym_env.registry import (
@@ -133,6 +139,7 @@ class RealFactorioEnv:
 
         self.task_key = task_key
         self.pause_after_action = pause_after_action
+        self.starting_inventory = dict(starting_inventory or {})
         self._fle_action = FLEAction
         self._env = make_factorio_env(spec=GymEnvironmentSpec(**info), run_idx=run_idx)
 
@@ -173,9 +180,33 @@ class RealFactorioEnv:
         annotation, in either direction, does not break the harness.
         """
         result = self._env.reset()
-        if isinstance(result, tuple):
-            return result[0]
-        return result
+        observation = result[0] if isinstance(result, tuple) else result
+        if self.starting_inventory:
+            observation = self._stock_inventory()
+        return observation
+
+    def _stock_inventory(self) -> Observation:
+        """Give the agent its starting inventory, and re-observe so it can see it.
+
+        Applied *after* reset, not before: FLE's reset runs the task's setup, which
+        installs that task's own starting inventory - empty for ``open_play`` - and
+        would undo anything set earlier.
+
+        Re-observing matters as much as the stocking. The observation reset() returned
+        was built before this ran, so it still reports an empty inventory, and the
+        policy's first prompt would tell the agent it owns nothing - sending it off to
+        craft what it is already holding (D40).
+        """
+        try:
+            namespace = self._env.instance.namespaces[0]
+            namespace._set_inventory(self.starting_inventory)
+            return self._env.get_observation().to_dict()
+        except (AttributeError, IndexError) as error:
+            raise RuntimeError(
+                "could not stock the starting inventory: FLE's namespace or "
+                f"observation shape has changed ({error}). Clear starting_inventory "
+                "to run without it."
+            ) from error
 
     def step(self, action: Action) -> tuple[Observation, float, bool, bool, Info]:
         """Translate our Action into FLE's and pass it through.

@@ -10,6 +10,7 @@
   "history_length": 16,
   "environment": "mock",
   "task_key": "open_play",
+  "starting_inventory": {},
   "enable_vision": false,
   "pause_after_action": true,
   "trajectory_dir": "trajectories",

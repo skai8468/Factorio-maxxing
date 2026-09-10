@@ -10,6 +10,9 @@
   "history_length": 16,
   "environment": "live",
   "task_key": "open_play",
+  "starting_inventory": {
+    "burner-mining-drill": 3
+  },
   "enable_vision": true,
   "pause_after_action": false,
   "trajectory_dir": "trajectories",

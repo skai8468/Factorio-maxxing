@@ -1086,3 +1086,46 @@ enough to set - so the harness absorbs it rather than adding a seventh site to t
 that a reinstall silently reverts (D37). Touching a private attribute is recorded in a
 docstring and covered by a test that mirrors the real guard, so an upstream fix that
 makes this redundant will not break anything.
+
+---
+
+## D40 - Starting inventory is an explicit scenario parameter
+
+**Decision (research lead).** `RealFactorioEnv` takes `starting_inventory`, carried by a
+config key of the same name and empty by default. It is applied after `reset()`, via
+FLE's per-namespace `_set_inventory`, and the environment then re-observes so the
+policy's first prompt reflects it. `configs/live-watchable.json` sets
+`{"burner-mining-drill": 3}`.
+
+**Why.** `open_play` starts the agent with nothing, which quietly changes what a goal
+measures. "Place a burner mining drill on iron ore, fuel it, and verify it is working"
+reads as four actions, but with an empty inventory it is really: mine stone, craft a
+stone furnace, mine iron ore, mine coal, smelt plates, craft gear wheels, craft the
+drill, and only then place, fuel and verify. Both live runs to date died at "place" for
+that reason - the agent never had a drill, and every placement error it saw was FLE's
+mangled way of saying so (D37).
+
+**Why this rather than a lab task.** FLE's throughput tasks already carry
+`LAB_PLAY_POPULATED_STARTING_INVENTORY` - 500 coal, 50 drills, and much else - so
+switching `task_key` would have cost no code. Two reasons not to. Those tasks run their
+own `sleep`-based verification every step, and they set `terminated` on *their* success
+criteria, which this loop reports as `environment terminated` - a successful run would
+be recorded as a failure. And adopting a task's success criteria is exactly what D32
+declined to do: `open_play` is a neutral sandbox and our verifier decides completion.
+
+**Why three drills, and no coal.** The goal names finding coal as a step, so handing the
+agent 500 coal would delete part of what is being demonstrated - it can mine its own, and
+already did so unprompted on the first run. Three drills rather than one is slack for a
+misplacement, not generosity.
+
+**What it costs.** A goal run with a stocked inventory is not comparable with the same
+goal run empty-handed, so the parameter belongs in any reported result alongside the
+model and the goal text. It is a scenario parameter, not a hint: it is fixed before the
+run and is not an intervention, so it does not touch the M1 intervention count.
+
+**Why after reset, and why re-observe.** FLE's `reset()` runs the task's setup, which
+installs the task's own starting inventory; anything set earlier is discarded. And the
+observation `reset()` returns is built before the stocking, so without re-observing the
+first prompt would tell the agent it owns nothing - sending it off to craft what it is
+already holding. A changed FLE shape raises rather than falling back, because silence
+here means an empty-handed agent, which is the failure being fixed.

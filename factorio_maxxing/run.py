@@ -19,7 +19,7 @@ import json
 import logging
 import sys
 import uuid
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -113,6 +113,13 @@ class Config:
     `open_play` is a neutral sandbox, not a task whose success criteria we adopt: the
     Goal drives the policy and our own verifier decides completion (D6). FLE's task
     verification stays unused at M0/M1."""
+    starting_inventory: dict[str, int] = field(default_factory=dict)
+    """What the agent holds at reset. Used only when environment is "live".
+
+    Empty by default, which is what `open_play` gives. This is a scenario parameter,
+    not a hint: it decides what a goal actually measures, since "place a burner mining
+    drill" with an empty inventory silently includes crafting one from raw stone and
+    ore (D40)."""
     enable_vision: bool = False
     """Whether FLE renders a map image into every observation. Used only when live.
 
@@ -260,6 +267,7 @@ def _build_live_environment(config: Config) -> EnvProtocol:
             task_key=config.task_key,
             pause_after_action=config.pause_after_action,
             enable_vision=config.enable_vision,
+            starting_inventory=config.starting_inventory,
         )
     except ImportError as exc:
         raise ConfigError(

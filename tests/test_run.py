@@ -68,6 +68,7 @@ def test_defaults_match_the_documented_config():
     assert config.environment == "mock"
     assert config.pause_after_action is True
     assert config.enable_vision is False
+    assert config.starting_inventory == {}
     assert config.trajectory_dir == "trajectories"
 
 
@@ -228,6 +229,21 @@ def test_live_passes_the_configured_vision(monkeypatch):
     assert seen["enable_vision"] is False
 
 
+def test_live_passes_the_configured_starting_inventory(monkeypatch):
+    seen = {}
+
+    def record(task_key, pause_after_action, enable_vision, starting_inventory):
+        seen["starting_inventory"] = starting_inventory
+        return object()
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
+    build_environment(Config(environment="live", starting_inventory={"coal": 5}))
+    assert seen["starting_inventory"] == {"coal": 5}
+
+    build_environment(Config(environment="live"))
+    assert seen["starting_inventory"] == {}
+
+
 def test_vision_flag_turns_rendering_on():
     assert resolve_config(parse("--goal", "g")).enable_vision is False
     assert resolve_config(parse("--goal", "g", "--vision")).enable_vision is True
@@ -261,6 +277,7 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     assert config.environment == "live"
     assert config.pause_after_action is False
     assert config.enable_vision is True
+    assert config.starting_inventory == {"burner-mining-drill": 3}
     assert config.stuck_threshold == 8
     assert config.max_interventions_without_progress == 5
     assert Path(config.api_reference).is_file()

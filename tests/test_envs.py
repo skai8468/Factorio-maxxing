@@ -149,6 +149,22 @@ class _FLEAction:
         self.game_state = game_state
 
 
+class _FakeNamespace:
+    def __init__(self):
+        self.inventory_set_to = None
+
+    def _set_inventory(self, inventory):
+        self.inventory_set_to = dict(inventory)
+
+
+class _FakeObservation:
+    def __init__(self, payload):
+        self._payload = payload
+
+    def to_dict(self):
+        return self._payload
+
+
 class _FakeInstance:
     """Stands in for FLE's FactorioInstance, whose pause flag is the point here.
 
@@ -160,6 +176,7 @@ class _FakeInstance:
         self._is_paused = False
         self.unpause_calls = 0
         self.rcon_unpaused = False
+        self.namespaces = [_FakeNamespace()]
 
     def unpause(self):
         self.unpause_calls += 1
@@ -174,6 +191,13 @@ class _FakeGymEnv:
         self.stepped: list[_FLEAction] = []
         self.closed = False
         self.instance = _FakeInstance()
+        # What a re-observation after stocking returns, distinct from reset()'s.
+        self.fresh_observation = {
+            "inventory": [{"type": "burner-mining-drill", "quantity": 3}]
+        }
+
+    def get_observation(self, agent_idx=0, response=None):
+        return _FakeObservation(self.fresh_observation)
 
     def reset(self):
         return self._reset_result
@@ -342,6 +366,62 @@ def test_an_environment_without_an_instance_is_tolerated(monkeypatch):
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
     del fake_env.instance
     RealFactorioEnv()  # must not raise
+
+
+def test_no_starting_inventory_leaves_reset_alone(monkeypatch):
+    """The default is FLE's own: whatever the task gives, which open_play makes none."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({"inventory": []}, {}))
+    observation = RealFactorioEnv().reset()
+
+    assert fake_env.instance.namespaces[0].inventory_set_to is None
+    assert observation == {"inventory": []}
+
+
+def test_a_starting_inventory_is_stocked_after_reset(monkeypatch):
+    """D40: before reset would be undone, since reset runs the task's own setup."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({"inventory": []}, {}))
+    env = RealFactorioEnv(starting_inventory={"burner-mining-drill": 3})
+    env.reset()
+
+    assert fake_env.instance.namespaces[0].inventory_set_to == {"burner-mining-drill": 3}
+
+
+def test_reset_re_observes_so_the_policy_sees_the_stock(monkeypatch):
+    """The prompt must not open by telling the agent it owns nothing."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({"inventory": []}, {}))
+    env = RealFactorioEnv(starting_inventory={"burner-mining-drill": 3})
+
+    assert env.reset() == fake_env.fresh_observation
+
+
+def test_the_starting_inventory_is_copied_not_aliased(monkeypatch):
+    """A caller's dict must not be able to change what a later reset stocks."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({}, {}))
+    supplied = {"coal": 5}
+    env = RealFactorioEnv(starting_inventory=supplied)
+    supplied["coal"] = 999
+
+    assert env.starting_inventory == {"coal": 5}
+
+
+def test_a_changed_fle_shape_fails_with_a_readable_error(monkeypatch):
+    """Silence here would mean an empty-handed agent, which is the bug being fixed."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv(starting_inventory={"coal": 5})
+    fake_env.instance.namespaces = []
+
+    with pytest.raises(RuntimeError, match="could not stock the starting inventory"):
+        env.reset()
 
 
 def test_task_key_and_run_idx_reach_the_factory(monkeypatch):
