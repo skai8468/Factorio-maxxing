@@ -1172,3 +1172,50 @@ networking were each eliminated by test before this was found. Not pursued furth
 **Corrects D38**, which recommended rendering as the supported way to watch a run. The
 FLE team's own `render(x, y)` is for the agent, not for an audience. That reading was
 wrong and this supersedes it.
+
+---
+
+## D42 - A game client cannot watch a live run: joining crashes the server
+
+**Finding, measured 2026-09-11, twice.** Connecting a Factorio client to the FLE server
+during a run kills the server outright:
+
+```
+Cannot serialize entity: LuaEntity is no longer valid (entity may have been destroyed)
+Saving scenario failed: The scenario level caused a non-recoverable error.
+Error while running event level::on_save()
+Quitting: multiplayer error.
+```
+
+Docker then restarts the container, and the harness run dies with it.
+
+**The mechanism.** A joining client must be served the map, so the server saves it -
+`changing state from(InGame) to(InGameSavingMap)`, immediately after the connection
+request. FLE's scenario serialises entities in `on_save`, and it holds references that
+are no longer valid once `create_agent_characters` has destroyed and recreated
+characters, which `reset()` does at the start of every run. The save throws, and
+Factorio treats a failed multiplayer save as fatal.
+
+**Timing does not dodge it.** The obvious fix - join *after* the reset, when characters
+are fresh - was tried and produced the identical crash at the identical place. The stale
+reference is not a transient of the reset.
+
+**Which corrects `fle-integration.md`.** "Watching a run with a real Factorio client -
+verified 2026-09-07" was verified against a world **no run had ever touched**, where the
+scenario's stored entity tables were still valid. That is the only condition under which
+a client can join. It is not a way to watch a run.
+
+**Everything else on that path was eliminated first**, and is worth keeping: the
+handshake works end to end through Docker's UDP publishing (captured: 14 -> 26 -> 50 ->
+131 bytes both ways), mirrored WSL networking makes `localhost:34197` work and removes
+the shifting VM address, the Hyper-V rule is correct, and `/promote` over RCON gives the
+admin rights `/c` needs. None of that was the problem.
+
+**What would be needed.** A patch to FLE's scenario Lua so `on_save` skips invalid
+entities rather than raising - a third site-packages patch, on Lua loaded into the
+running game, and riskier than the two already carried (D34, D37). Not attempted.
+
+**Consequence for the project.** There is currently no way to watch or film an FLE run
+as gameplay. The renderer cannot draw entities (D41) and a client cannot connect (this
+entry). What a run can produce is the terminal and the trajectory, which is what
+demonstrations should be built from until one of the two is fixed.
