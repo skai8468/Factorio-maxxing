@@ -276,7 +276,7 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     config = Config(**data)
     assert config.environment == "live"
     assert config.pause_after_action is False
-    assert config.enable_vision is False
+    assert config.enable_vision is True
     assert config.starting_inventory == {"burner-mining-drill": 3, "stone-furnace": 2}
     assert config.stuck_threshold == 8
     assert config.max_interventions_without_progress == 5

@@ -14,7 +14,7 @@
     "burner-mining-drill": 3,
     "stone-furnace": 2
   },
-  "enable_vision": false,
+  "enable_vision": true,
   "pause_after_action": false,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"

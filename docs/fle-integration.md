@@ -424,6 +424,34 @@ rendering will produce empty images` at startup and renders blank frames:
 cd ~/fle-work && ~/venvs/fle/bin/fle sprites
 ```
 
+**`fle sprites` alone is not enough, and fails silently at it.** Entity graphics ship as
+Basis Universal textures and need a `basisu` binary, which is undocumented, unpackaged
+for Ubuntu, and absent. Without it every entity sprite fails while icons, terrain and
+trees succeed - so the sprite directory looks populated and the renderer draws terrain,
+ore and alert icons but no buildings (D44). Build the transcoder once:
+
+```bash
+sudo apt-get install -y cmake
+git clone --depth 1 https://github.com/BinomialLLC/basis_universal /tmp/basis_universal
+cmake -B /tmp/basis_universal/build -DCMAKE_BUILD_TYPE=Release -S /tmp/basis_universal
+cmake --build /tmp/basis_universal/build -j"$(nproc)"
+sudo install -m 0755 /tmp/basis_universal/bin/basisu /usr/local/bin/basisu
+```
+
+**Then regenerate with ABSOLUTE paths.** FLE runs `basisu` with its working directory set
+to a temp dir but passes the sprite path through unchanged, so a relative input directory
+produces `Failed reading file`:
+
+```bash
+~/venvs/fle/bin/python -c "from fle.agents.data.sprites.download import generate_sprites; import os; b=os.path.expanduser('~/fle-work/.fle'); generate_sprites(input_dir=b+'/spritemaps', output_dir=b+'/sprites')"
+```
+
+Expect the sprite count to rise from ~1,802 to ~2,176 and
+`ls ~/fle-work/.fle/sprites | grep burner-mining-drill` to return the four directions
+plus shadows. Ignore `.fle/spritemaps/cache/` - its PNGs carry the FLE author's absolute
+paths, ship with the dataset, and are never read back locally, so they look like proof
+of successful transcoding when there has been none.
+
 Sprites come from the Hugging Face dataset `Noddybear/fle_images`, which is the FLE
 author's own. They land in `.fle/sprites` **under the directory you ran it from** -
 `~/fle-work/.fle/sprites` if you followed the instruction above.

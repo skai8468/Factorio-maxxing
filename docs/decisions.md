@@ -1265,3 +1265,44 @@ end to end through Docker's publishing, mirrored WSL networking makes `localhost
 work and removes the shifting VM address, the Hyper-V firewall rule is correct, and
 `/promote` over RCON grants the admin rights `/c` needs. A client can still join a
 cluster on which no run has been started.
+
+---
+
+## D44 - Retracting D41: the renderer draws entities once `basisu` exists
+
+**Retraction.** D41 concluded that FLE's renderer cannot draw entities and that its sprite
+dataset contains no entity graphics. Both claims are wrong. The renderer draws entities
+correctly - verified with a drill and a furnace, sprites and shadows, and a full 15-step
+run rendered as a timelapse. D41 should not be relied on.
+
+**What was actually broken, in three layers.** Factorio ships entity graphics as **Basis
+Universal** compressed textures (`.basis`), while icons, terrain, trees and alerts are
+plain PNGs. FLE transcodes the former by shelling out to a `basisu` binary.
+
+1. **`basisu` was not installed**, and is not packaged for Ubuntu. Every entity failed
+   with `Permission denied: 'basisu'` while every PNG-based category succeeded - which is
+   precisely the lopsided sprite set D41 inspected and misread as "no entity graphics
+   exist". The evidence for that conclusion was an artefact of the failure.
+2. **`basisu` is invoked with a relative path from a temporary `cwd`.** With the binary
+   present the error simply changed to `Failed reading file ".fle/spritemaps/..."`. This
+   is an upstream bug; it is avoided without patching by passing **absolute** paths to
+   `generate_sprites`.
+3. Only then did extraction produce entity sprites: 1,802 -> 2,176 files, including
+   `burner-mining-drill_{north,south,east,west}` with shadows and `stone-furnace`.
+
+**A trap worth naming.** `.fle/spritemaps/cache/` contains 381 transcoded PNGs whose
+filenames embed the FLE author's own absolute paths
+(`_Users_jackhopkins_PycharmProjects_...`). They ship with the Hugging Face dataset and
+are never read back locally, so their presence looks like successful transcoding when
+none has happened.
+
+**Method.** The lesson is narrower than "check harder". D41 reasoned from a file listing -
+counting prefixes in the output directory - and concluded a capability was absent. The
+listing was downstream of a silent failure. A capability claim needs the failure path
+checked, not just the artefact inspected. The run that settled it took one command.
+
+**Consequence.** `configs/live-watchable.json` turns `enable_vision` back on. A run now
+yields one rendered frame per step showing the real factory, and `extract_map_images`
+plus `ffmpeg` turns them into a video. D42 and D43 still stand: a game *client* still
+cannot join, for the unrelated reason that saves fail on functions in `storage`. Rendering
+is the route, which is what D38 said before D41 wrongly closed it.
