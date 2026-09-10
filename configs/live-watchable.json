@@ -11,9 +11,10 @@
   "environment": "live",
   "task_key": "open_play",
   "starting_inventory": {
-    "burner-mining-drill": 3
+    "burner-mining-drill": 3,
+    "stone-furnace": 2
   },
-  "enable_vision": true,
+  "enable_vision": false,
   "pause_after_action": false,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"

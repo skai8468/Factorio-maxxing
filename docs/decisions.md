@@ -1129,3 +1129,46 @@ observation `reset()` returns is built before the stocking, so without re-observ
 first prompt would tell the agent it owns nothing - sending it off to craft what it is
 already holding. A changed FLE shape raises rather than falling back, because silence
 here means an empty-handed agent, which is the failure being fixed.
+
+---
+
+## D41 - The renderer cannot show a factory, so it is not a way to watch a run
+
+**Finding, measured 2026-09-11.** FLE's renderer draws terrain, ore, trees, cliffs and
+alert icons. It does **not** draw entities. The sprite dataset it downloads,
+`Noddybear/fle_images`, contains no entity graphics at all:
+
+| Prefix | Count |
+|---|---|
+| `tree*` | 886 |
+| `icon_*` (inventory icons) | 342 |
+| ore / water / cliff tiles | ~350 |
+| `alert-*` | the remainder |
+
+`icon_burner-mining-drill.png` is the inventory icon, not the building.
+
+**Proved directly.** A drill was placed next to the character and the scene rendered at
+four parameter settings, down to `radius=8` where a 2x2 entity spans roughly 64 pixels.
+All four show a red out-of-fuel alert triangle at the drill's position and nothing
+underneath it. No parameter changes this; the sprites are not there to draw.
+
+**Which explains the blank frames of the first successful run.** By its final step the
+drill was fuelled, so there was no alert, so nothing was drawn - the frames looked like
+empty landscape because, as far as the renderer is concerned, they were.
+
+**Consequence.** `enable_vision` remains useful for the agent's own spatial reasoning,
+which is what upstream built it for, and it stays available. It is not a route to a video
+of an agent building a factory, and `configs/live-watchable.json` therefore turns it back
+off: a render costs time on every step and a large base64 blob in every recorded
+observation (D38), for images that show nothing the trajectory does not already say.
+
+**What this leaves.** A real game client is the only way to see entities, and that path
+is blocked on Docker's UDP publishing rather than on anything in this harness: a
+datagram sent from Windows to port 34197 arrives in WSL when the container is stopped and
+a plain listener holds the port, but with the container running the Factorio server logs
+no join attempts at all. The Hyper-V firewall rule, the WSL address and mirrored
+networking were each eliminated by test before this was found. Not pursued further today.
+
+**Corrects D38**, which recommended rendering as the supported way to watch a run. The
+FLE team's own `render(x, y)` is for the agent, not for an audience. That reading was
+wrong and this supersedes it.

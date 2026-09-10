@@ -269,15 +269,15 @@ def test_an_absent_no_pause_flag_does_not_override_a_config_file(tmp_path):
 
 
 def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
-    """The demonstration config: a run you can watch, that does not ask every 3 steps."""
+    """The demonstration config: a longer goal, and it does not ask every 3 steps."""
     data = json.loads(Path("configs/live-watchable.json").read_text(encoding="utf-8"))
     assert set(data) == {field.name for field in fields(Config)}
 
     config = Config(**data)
     assert config.environment == "live"
     assert config.pause_after_action is False
-    assert config.enable_vision is True
-    assert config.starting_inventory == {"burner-mining-drill": 3}
+    assert config.enable_vision is False
+    assert config.starting_inventory == {"burner-mining-drill": 3, "stone-furnace": 2}
     assert config.stuck_threshold == 8
     assert config.max_interventions_without_progress == 5
     assert Path(config.api_reference).is_file()
