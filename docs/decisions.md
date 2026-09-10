@@ -856,3 +856,56 @@ against published leaderboard numbers should note it. Build-plan section 23's li
 now depends on a manual post-install patch - recorded in `fle-integration.md` rather than
 automated, since build-plan section 9 fixes the repository structure and this is a
 property of the environment, not of the harness.
+
+---
+
+## D35 - Execution errors are read from FLE's `info`, not from the observation
+
+**Decision.** `execution_errors` takes the step's `info` dict beside the observation and
+reads FLE's `error_occurred` flag and `result` text first, falling back to the
+observation's `raw_text` when the flag is set but the text is missing. The observation
+keys `error` and `stderr` are kept for the mock. `error_signature` gains two
+normalisations for what FLE actually sends: it unescapes literal `\n` sequences before
+splitting into lines, and strips the leading `N: ` execution-trace prefix from the line
+it keeps. `loop.py` stops discarding `info`.
+
+**Why.** D16 and D32 both deferred one question to Phase 5: which key a live FLE
+observation populates for an execution error. Measured against the running container,
+the answer is **none of them**. FLE reports failure in the `info` dict -
+`environment.py` computes `error_occurred = "error" in result.lower() or "exception: "
+in result.lower()` and returns it beside `result` - and puts the same text in the
+observation's `raw_text`, where it is indistinguishable from a successful step's output.
+`execution_errors` therefore returned `[]` for **every** failing live step.
+
+**What that cost, and it is an M1 defect rather than a cosmetic one.** The
+`error_signature` half of the default detector reads one error per step and fires when
+three consecutive steps carry the same signature. Fed an empty list every step, it could
+never fire against real Factorio - so the fast path that D7 added precisely because
+consecutive non-DONE is too slow was dead live, leaving M1 dependent on the slow
+detector alone. The trajectory's `execution_errors` field was likewise empty on failing
+steps, so the section 5 execution-error taxonomy would have recorded nothing. The policy
+was **not** blind: `raw_text` reaches it through the renderer's EXECUTION section, which
+is why nothing looked wrong.
+
+**Why the two signature normalisations are not tidying.** FLE's `parse_result_into_str`
+prefixes every output line with the submitted code's line number, and embeds the
+exception as a repr in which newlines survive as the two characters `\n`. The whole
+failure therefore arrives as a single line that `splitlines` cannot split, so the
+signature became the entire string, line number included - and the same mistake made
+after an added `print` would have hashed differently, breaking the repeat detection the
+detector exists for. Both are properties of FLE's formatting, so both are normalised
+where signatures are computed rather than at the boundary.
+
+**Why `info` rather than pattern-matching `raw_text`.** FLE already decides what counts
+as an error and publishes the verdict. Re-deriving it from the text would duplicate a
+rule we do not own and would misclassify a successful step whose output happens to
+contain the word "error".
+
+**Verified live** against the running container: the same failure submitted three times,
+once behind a `print` so its line number differed, produced one identical signature on
+all three and `default_detector(3)` fired. Before the change the same sequence yielded
+three empty errors and no detection.
+
+**Not changed.** The recorder still stores the observation verbatim; `info` is read for
+the error field only, not recorded wholesale. The verifier is untouched - errors inform
+stuckness, never completion (D6, D7).

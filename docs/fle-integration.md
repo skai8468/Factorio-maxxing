@@ -288,6 +288,57 @@ technology tree with prerequisites and ingredients on every observation. Everyth
 is under 200 bytes. This is a *trajectory* cost, not a prompt cost: the renderer collapses
 `technologies` to a `researched: N/M` count, so the tree never reaches the model.
 
+### Where execution errors live - measured 2026-09-10
+
+An observation carries **no error field**. `error` and `stderr` are never populated, and
+the observation is not where a failure is reported at all.
+
+| Source | Key | Shape |
+|---|---|---|
+| `info` (5-tuple's fifth element) | `error_occurred` | `bool`, computed by FLE |
+| `info` | `result` | the failing output text |
+| `observation` | `raw_text` | the same text - **also** used for successful output |
+
+`fle/env/gym_env/environment.py` decides it with a substring test over the eval result:
+
+```python
+error_occurred = "error" in result.lower() or "exception: " in result.lower()
+```
+
+so `info` is authoritative and `raw_text` is not a signal - a successful step's output
+sits in the same field. The harness reads `info` (D35).
+
+**The text's formatting matters to stuck detection.** Two properties, both from
+`fle/env/namespace.py`:
+
+1. `parse_result_into_str` emits `f"{line_no}: {value}"` per output line, so every line
+   is prefixed with the **submitted code's** line number.
+2. The exception is embedded as a repr, so its newlines survive as the two characters
+   `\n` rather than as line breaks - the whole failure is one physical line.
+
+Measured, after submitting `place_entity('burner-mining-drill', position=(12, -3))`:
+
+```
+1: ('\nAssertionError: The first argument must be a Prototype',)
+```
+
+and, from a bare string where a `Prototype` was wanted:
+
+```
+1: ('\nException: ('Passed in burner-mining-drill argument is not a valid Prototype',
+AttributeError("'str' object has no attribute 'value'"))',)
+```
+
+`error_signature` unescapes and strips the prefix before comparing, so the same mistake
+made at a different line still counts as a repeat (D35).
+
+**Strings are `Prototype` members, not names.** Both errors above are one mistake:
+`place_entity` and `insert_item` want `Prototype.BurnerMiningDrill`, not
+`'burner-mining-drill'`. `configs/fle_api_reference.md` states this in the signatures and
+defines the enum, so a live policy has what it needs - but it is the first thing a live
+run gets wrong, and it is what the offline demo fixtures in `run.py` do, since the mock
+never reads the code they submit.
+
 ### Cost of `enable_vision` - measured 2026-09-06
 
 Rendering happens in the Python process (`namespace._render().to_base64()`), not in the

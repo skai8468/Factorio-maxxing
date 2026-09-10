@@ -12,7 +12,7 @@ from factorio_maxxing.envs import MockFactorioEnv, MockFrame
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.human import Hint, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import StubLLMClient
-from factorio_maxxing.loop import run_goal
+from factorio_maxxing.loop import execution_errors, run_goal
 from factorio_maxxing.stuck import ConsecutiveNonDoneDetector, default_detector
 from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
 from factorio_maxxing.verifier import (
@@ -22,6 +22,12 @@ from factorio_maxxing.verifier import (
 )
 
 POLICY = "```python\nplace_entity()\n```"
+
+# Transcribed verbatim from a live container, 2026-09-10, after submitting
+# place_entity('burner-mining-drill', ...) with a string where FLE wants a Prototype.
+# FLE prefixes the failing statement's line number and wraps the exception, which is
+# why error_signature reads the last line rather than the first (D35).
+LIVE_ERROR = "1: ('\nAssertionError: The first argument must be a Prototype',)"
 NOT_DONE = VerificationResult(False, "not yet")
 DONE = VerificationResult(True, "12 iron plates in inventory")
 
@@ -36,11 +42,17 @@ class NeverStuck:
         return False, ""
 
 
-def make_env(steps: int = 8, observation: dict | None = None, terminated_at=None):
+def make_env(
+    steps: int = 8,
+    observation: dict | None = None,
+    terminated_at=None,
+    info: dict | None = None,
+):
     frames = [
         MockFrame(
             observation=observation or {"inventory": {"iron-plate": i + 1}},
             terminated=(terminated_at == i),
+            info=dict(info) if info else {},
         )
         for i in range(steps)
     ]
@@ -167,6 +179,70 @@ def test_execution_errors_are_recorded_and_fed_back(recorder):
     assert records_of(recorder, "step")[0]["execution_errors"] == ["NameError: x"]
     assert "EXECUTION ERRORS" in client.prompts[1]
     assert "NameError: x" in client.prompts[1]
+
+
+def test_a_live_failure_is_read_from_info():
+    """D35: FLE reports failure in info, not in an observation error key."""
+    errors = execution_errors(
+        {"raw_text": LIVE_ERROR},
+        {"error_occurred": True, "result": LIVE_ERROR},
+    )
+    assert errors == [LIVE_ERROR]
+
+
+def test_a_live_success_carrying_output_is_not_an_error():
+    """raw_text holds ordinary output too, so it cannot be the error signal itself."""
+    clean = {"error_occurred": False, "result": "1: ([],)"}
+    assert execution_errors({"raw_text": "1: ([],)"}, clean) == []
+
+
+def test_a_flagged_error_with_no_result_falls_back_to_raw_text():
+    assert execution_errors({"raw_text": LIVE_ERROR}, {"error_occurred": True}) == [
+        LIVE_ERROR
+    ]
+
+
+def test_observation_error_keys_still_report_without_info():
+    """The mock and any environment reporting errors that way are unaffected."""
+    assert execution_errors({"stderr": "NameError: x"}) == ["NameError: x"]
+    assert execution_errors({"stderr": "NameError: x"}, {}) == ["NameError: x"]
+
+
+def test_live_shaped_errors_reach_the_recorder_and_the_prompt(recorder):
+    client = StubLLMClient([POLICY])
+    run(
+        recorder,
+        client=client,
+        env=make_env(
+            observation={"raw_text": LIVE_ERROR},
+            info={"error_occurred": True, "result": LIVE_ERROR},
+        ),
+    )
+    assert records_of(recorder, "step")[0]["execution_errors"] == [LIVE_ERROR]
+    assert "EXECUTION ERRORS" in client.prompts[1]
+    assert "AssertionError" in client.prompts[1]
+
+
+def test_repeated_live_errors_fire_the_error_signature_detector(recorder):
+    """The point of D35: without info, this detector could never fire live.
+
+    The default detector's error-signature half needs one error per failing step.
+    Live, every one of those steps looked clean.
+    """
+    human = ScriptedHuman(["Pass Prototype.BurnerMiningDrill, not a string."])
+    result = run(
+        recorder,
+        goal=Goal(description="Produce iron plates", max_steps=6),
+        human=human,
+        detector=default_detector(threshold=3),
+        env=make_env(
+            observation={"raw_text": LIVE_ERROR},
+            info={"error_occurred": True, "result": LIVE_ERROR},
+        ),
+    )
+    assert result.interventions >= 1
+    reasons = [r["stuck_reason"] for r in records_of(recorder, "intervention")]
+    assert "3 repeated execution errors" in reasons[0]
 
 
 def test_no_human_is_never_asked_when_the_agent_is_not_stuck(recorder):

@@ -15,6 +15,7 @@ verification *events*, which are sparse when verification_interval > 1; the erro
 signature detector counts steps, and is the fast path when verification is sparse.
 """
 
+import re
 from collections.abc import Sequence
 from typing import Any, Protocol, runtime_checkable
 
@@ -28,6 +29,9 @@ Flows = Sequence[Any]
 Errors = Sequence[str | None]
 
 NOT_STUCK: tuple[bool, str] = (False, "")
+
+# FLE's execution-trace prefix: the submitted line number that produced the output.
+_LINE_NUMBER = re.compile(r"^\d+:\s*")
 
 
 @runtime_checkable
@@ -48,11 +52,21 @@ def error_signature(error: str | None) -> str:
     which is what makes two failures 'the same failure'. Case and spacing are
     normalised; nothing else is stripped, so two genuinely different errors stay
     different.
+
+    Two normalisations exist for what FLE actually sends (D35). FLE prefixes every
+    output line with the submitted code's line number - ``parse_result_into_str``
+    emits ``f"{line_no}: {value}"`` - so the same mistake made after an added print
+    statement would otherwise look like a different failure. And it embeds the
+    exception as a repr, in which newlines survive as the two characters ``\\n``, so
+    the whole traceback arrives as one line and ``splitlines`` finds nothing to split.
     """
     if not error:
         return ""
-    lines = [line.strip() for line in str(error).splitlines() if line.strip()]
-    return " ".join(lines[-1].split()).lower() if lines else ""
+    unescaped = str(error).replace("\\n", "\n")
+    lines = [line.strip() for line in unescaped.splitlines() if line.strip()]
+    if not lines:
+        return ""
+    return " ".join(_LINE_NUMBER.sub("", lines[-1]).split()).lower()
 
 
 class ConsecutiveNonDoneDetector:

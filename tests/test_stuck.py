@@ -26,6 +26,16 @@ def check(detector, verifications=(), errors=(), history=HISTORY, flows=()):
     return detector.is_stuck(history, list(verifications), list(flows), list(errors))
 
 
+@pytest.fixture
+def recorded_live_error():
+    """One execution error, transcribed from a live container on 2026-09-10.
+
+    The backslash-n is deliberate and is not a newline: FLE embeds the exception as a
+    repr, so the whole failure arrives on a single line (D35).
+    """
+    return "1: ('\\nAssertionError: The first argument must be a Prototype',)"
+
+
 def test_detectors_satisfy_the_protocol():
     assert isinstance(ConsecutiveNonDoneDetector(), StuckDetector)
     assert isinstance(RepeatedErrorDetector(), StuckDetector)
@@ -78,6 +88,32 @@ def test_error_signature_normalises_case_and_spacing():
 def test_error_signature_of_nothing_is_empty():
     assert error_signature("") == ""
     assert error_signature(None) == ""
+
+
+def test_error_signature_reads_a_measured_live_error(recorded_live_error):
+    """D35: FLE sends one line, line-number prefixed, newlines escaped rather than real.
+
+    Without both normalisations the signature is the whole string, prefix included.
+    """
+    assert (
+        error_signature(recorded_live_error)
+        == "assertionerror: the first argument must be a prototype',)"
+    )
+
+
+def test_the_same_live_error_at_a_different_line_has_the_same_signature():
+    """The mistake is the same mistake whether or not a print statement preceded it."""
+    first = "1: ('\\nAssertionError: The first argument must be a Prototype',)"
+    later = "4: ('\\nAssertionError: The first argument must be a Prototype',)"
+    assert error_signature(first) == error_signature(later)
+
+
+def test_different_live_errors_still_differ(recorded_live_error):
+    other = (
+        "1: ('\\nException: (\\'Passed in burner-mining-drill argument is not a "
+        "valid Prototype\\', AttributeError())',)"
+    )
+    assert error_signature(recorded_live_error) != error_signature(other)
 
 
 def test_repeated_error_detector_fires_on_the_same_error():

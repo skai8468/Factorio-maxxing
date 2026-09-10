@@ -29,6 +29,8 @@ from factorio_maxxing.verifier import VERIFICATION_WINDOW, Verifier
 
 MAX_INTERVENTIONS = 3
 ERROR_KEYS = ("error", "stderr")
+FLE_ERROR_FLAG = "error_occurred"
+FLE_ERROR_TEXT = "result"
 
 
 def execute_policy(
@@ -42,12 +44,25 @@ def execute_policy(
     return env.step(Action(code=policy))
 
 
-def execution_errors(observation: dict[str, Any]) -> list[str]:
-    """Pull execution errors out of an observation.
+def execution_errors(
+    observation: dict[str, Any], info: dict[str, Any] | None = None
+) -> list[str]:
+    """Pull execution errors out of a step's result.
 
-    Which key a live FLE observation populates is unverified until Phase 5, the same
-    caveat as D16. An unrecognised shape yields no errors rather than raising.
+    Measured against a live container, FLE reports failure in the step's ``info``
+    dict - ``error_occurred`` as a bool beside the offending output in ``result`` -
+    and populates neither of the observation keys this once looked for. The
+    observation instead carries the same text in ``raw_text``, indistinguishable
+    there from a successful step's output. ``info`` is therefore the authoritative
+    signal and is read first (D35).
+
+    The observation keys are kept for the mock and any environment that reports
+    errors that way. An unrecognised shape yields no errors rather than raising.
     """
+    if info and info.get(FLE_ERROR_FLAG):
+        text = str(info.get(FLE_ERROR_TEXT) or observation.get("raw_text") or "").strip()
+        if text:
+            return [text]
     return [str(observation[key]) for key in ERROR_KEYS if observation.get(key)]
 
 
@@ -108,9 +123,9 @@ def run_goal(
         response = policy_client.generate(prompt)
         policy = extract_policy(response.text)
 
-        observation, reward, terminated, truncated, _ = execute_policy(policy, env)
+        observation, reward, terminated, truncated, info = execute_policy(policy, env)
         rendered = render_observation(observation)
-        step_errors = execution_errors(observation)
+        step_errors = execution_errors(observation, info)
 
         recorder.record_step(step, goal, policy, observation, reward, step_errors)
         recorder.record_llm_call(step, "policy", response)
