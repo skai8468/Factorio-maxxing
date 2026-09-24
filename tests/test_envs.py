@@ -177,6 +177,10 @@ class _FakeInstance:
         self.unpause_calls = 0
         self.rcon_unpaused = False
         self.namespaces = [_FakeNamespace()]
+        self.speeds_set: list[float] = []
+
+    def set_speed(self, speed):
+        self.speeds_set.append(speed)
 
     def unpause(self):
         self.unpause_calls += 1
@@ -366,6 +370,36 @@ def test_an_environment_without_an_instance_is_tolerated(monkeypatch):
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
     del fake_env.instance
     RealFactorioEnv()  # must not raise
+
+
+def test_no_game_speed_leaves_fles_own(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv().reset()
+    assert fake_env.instance.speeds_set == []
+
+
+def test_a_game_speed_is_applied_at_construction_and_again_after_reset(monkeypatch):
+    """D46: FLE's reset puts the speed back to 10x, so it is re-applied every time."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv(game_speed=1)
+    assert fake_env.instance.speeds_set == [1]
+
+    env.reset()
+    env.reset()
+    assert fake_env.instance.speeds_set == [1, 1, 1]
+
+
+@pytest.mark.parametrize("speed", [0, -1])
+def test_a_non_positive_game_speed_is_refused(monkeypatch, speed):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({}, {}))
+    with pytest.raises(ValueError, match="game_speed"):
+        RealFactorioEnv(game_speed=speed)
 
 
 def test_no_starting_inventory_leaves_reset_alone(monkeypatch):

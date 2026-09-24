@@ -114,6 +114,11 @@ class RealFactorioEnv:
     ``open_play`` gives: nothing at all. A goal phrased as "place a burner mining drill"
     therefore silently includes crafting one from raw stone and ore, so what the agent
     begins with decides what the goal actually measures (D40).
+
+    ``game_speed`` of ``None`` keeps FLE's own, which ``reset()`` sets to 10x. A game
+    client cannot follow that: it must simulate every tick the server does, and at 10x
+    the server itself only manages about 150 ticks a second, so a watching client falls
+    behind and reports the server as not responding. Watched runs set 1 (D46).
     """
 
     def __init__(
@@ -124,6 +129,7 @@ class RealFactorioEnv:
         enable_vision: bool = False,
         pause_after_action: bool = True,
         starting_inventory: Mapping[str, int] | None = None,
+        game_speed: float | None = None,
     ):
         from fle.env.gym_env.action import Action as FLEAction
         from fle.env.gym_env.registry import (
@@ -136,8 +142,11 @@ class RealFactorioEnv:
         if info is None:
             raise ValueError(f"unknown FLE task key: {task_key}")
         info["enable_vision"] = enable_vision
+        if game_speed is not None and game_speed <= 0:
+            raise ValueError(f"game_speed must be positive, got {game_speed}")
 
         self.task_key = task_key
+        self.game_speed = game_speed
         self.pause_after_action = pause_after_action
         self.starting_inventory = dict(starting_inventory or {})
         self._fle_action = FLEAction
@@ -150,6 +159,19 @@ class RealFactorioEnv:
         self._env.pause_after_action = pause_after_action
 
         self._force_unpause()
+        self._apply_speed()
+
+    def _apply_speed(self) -> None:
+        """Set the configured game speed through FLE's own setter (D46).
+
+        FLE's setter, not a raw ``game.speed`` command, because FLE keeps the speed in
+        Python too: ``unpause()`` restores it from there, and the agent's ``sleep``
+        tool divides by it to turn ticks into wall-clock time. Called after every
+        reset as well as here, since FLE's reset puts the speed back to its own.
+        """
+        if self.game_speed is None:
+            return
+        self._env.instance.set_speed(self.game_speed)
 
     def _force_unpause(self) -> None:
         """Clear a pause left in the game by an earlier run (D39).
@@ -181,6 +203,7 @@ class RealFactorioEnv:
         """
         result = self._env.reset()
         observation = result[0] if isinstance(result, tuple) else result
+        self._apply_speed()
         if self.starting_inventory:
             observation = self._stock_inventory()
         return observation

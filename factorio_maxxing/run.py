@@ -133,6 +133,11 @@ class Config:
     verifier are called. False lets the world run on, which is what makes a run
     watchable through a game client, at the cost of a slightly stale observation
     (D36). Demonstrations turn it off; measured runs do not."""
+    game_speed: float | None = None
+    """Game speed multiplier for a live run. None keeps FLE's own, which is 10x.
+
+    A watching game client cannot keep up with 10x and reports the server as not
+    responding, so watched runs set 1. Measured runs keep FLE's default (D46)."""
     trajectory_dir: str = "trajectories"
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
@@ -215,6 +220,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="let the world run between steps, so a live run can be watched",
     )
+    parser.add_argument(
+        "--game-speed",
+        type=float,
+        help="game speed for a live run; 1 lets a game client keep up (FLE uses 10)",
+    )
     return parser
 
 
@@ -240,6 +250,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "task_key": args.task_key,
         "pause_after_action": False if args.no_pause else None,
         "enable_vision": True if args.vision else None,
+        "game_speed": args.game_speed,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
@@ -268,6 +279,7 @@ def _build_live_environment(config: Config) -> EnvProtocol:
             pause_after_action=config.pause_after_action,
             enable_vision=config.enable_vision,
             starting_inventory=config.starting_inventory,
+            game_speed=config.game_speed,
         )
     except ImportError as exc:
         raise ConfigError(

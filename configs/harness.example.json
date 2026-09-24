@@ -13,6 +13,7 @@
   "starting_inventory": {},
   "enable_vision": false,
   "pause_after_action": true,
+  "game_speed": null,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"
 }

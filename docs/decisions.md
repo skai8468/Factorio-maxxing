@@ -1353,3 +1353,34 @@ the pause off, and D36 already says measured runs keep the pause on.
 (no agent; no client). The full path - a client joined before the run, followed through
 a whole goal - has not yet been observed. That is the first thing to do with it, and
 this entry is corrected if it fails.
+
+---
+
+## D46 - Game speed is a knob; watched runs play at 1x
+
+**Finding, measured 2026-09-24.** With a client joined and a run started, the client
+reported the server as not responding within about a minute. The server was not hung:
+it was at 100% of one core, because **FLE runs the game at 10x**. `GameControl` in
+`fle/env/instance.py` has `reset_speed = 10`, and `reset()` restores it. The server
+managed only ~150 ticks a second against a target of 600 (tick 17,222 -> 17,681 in
+~3 s), and a client, which must simulate every tick the server does, fell steadily
+behind. The server still listed the player as connected throughout. Setting 1x over
+RCON brought it to 60 ticks a second at 40% CPU, and the client stayed joined.
+
+**Decision.** `RealFactorioEnv` takes `game_speed`, carried by a config key of the same
+name and a `--game-speed` flag. `None`, the default, keeps FLE's 10x, so measured runs
+are unchanged. `configs/live-watchable.json` sets 1.
+
+**Why FLE's setter, and why after every reset.** `instance.set_speed()` rather than a raw
+`/sc game.speed = ...`, because FLE keeps the speed in Python as well as in the game:
+`unpause()` restores it from there, and the agent's `sleep` tool divides by it to turn
+game ticks into wall-clock time. A raw command would leave the two disagreeing, and an
+agent's `sleep(60)` would last a tenth of the game time it asked for. Re-applied after
+every `reset()` because FLE's reset puts it back to 10x.
+
+**What it costs.** At 1x a step that waits on the world - a drill filling, a furnace
+smelting - takes ten times the wall-clock time it does at 10x, and path-finding and
+walking happen at human speed. That is what makes it watchable, and it is why this is
+a demonstration setting: game speed changes how much world time passes while the policy
+thinks with the pause off, so it belongs beside the model and goal in any reported
+result, as `starting_inventory` does (D40).

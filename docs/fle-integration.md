@@ -202,11 +202,15 @@ terminal is the one that holds WSL up.
    `localhost` work; the VM-IP instructions above are only needed without it. Confirm
    with `docker logs cluster-factorio_0-1 2>&1 | grep JOIN`.
 
-3. **Start the run**, in a second WSL terminal, with the pause off - `configs/live-watchable.json` already has
-   `"pause_after_action": false`. A paused game is what dropped the client in D38.
+3. **Start the run**, in a second WSL terminal. `configs/live-watchable.json` sets the
+   two things a watching client needs: `"pause_after_action": false`, since a paused
+   game is what dropped the client in D38, and `"game_speed": 1`, since FLE's own 10x
+   is more than the server can simulate and the client falls behind until it reports
+   the server as not responding (D46). The run needs `.env.local` for its API key and
+   sprite path:
 
    ```bash
-   cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."
+   source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."
    ```
 
 Further runs can follow in the same session without rejoining; each reset makes a new

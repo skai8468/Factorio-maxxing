@@ -232,7 +232,7 @@ def test_live_passes_the_configured_vision(monkeypatch):
 def test_live_passes_the_configured_starting_inventory(monkeypatch):
     seen = {}
 
-    def record(task_key, pause_after_action, enable_vision, starting_inventory):
+    def record(task_key, pause_after_action, enable_vision, starting_inventory, **_):
         seen["starting_inventory"] = starting_inventory
         return object()
 
@@ -242,6 +242,30 @@ def test_live_passes_the_configured_starting_inventory(monkeypatch):
 
     build_environment(Config(environment="live"))
     assert seen["starting_inventory"] == {}
+
+
+def test_live_passes_the_configured_game_speed(monkeypatch):
+    seen = {}
+
+    def record(task_key, game_speed, **_):
+        seen["game_speed"] = game_speed
+        return object()
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
+    build_environment(Config(environment="live", game_speed=1))
+    assert seen["game_speed"] == 1
+
+    build_environment(Config(environment="live"))
+    assert seen["game_speed"] is None, "None keeps FLE's own speed"
+
+
+def test_game_speed_flag_overrides_and_its_absence_does_not(tmp_path):
+    assert resolve_config(parse("--goal", "g")).game_speed is None
+    assert resolve_config(parse("--goal", "g", "--game-speed", "2")).game_speed == 2.0
+
+    path = tmp_path / "c.json"
+    path.write_text('{"game_speed": 1}', encoding="utf-8")
+    assert resolve_config(parse("--goal", "g", "--config", str(path))).game_speed == 1
 
 
 def test_vision_flag_turns_rendering_on():
@@ -276,6 +300,7 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     config = Config(**data)
     assert config.environment == "live"
     assert config.pause_after_action is False
+    assert config.game_speed == 1
     assert config.enable_vision is True
     assert config.starting_inventory == {"burner-mining-drill": 3, "stone-furnace": 2}
     assert config.stuck_threshold == 8
