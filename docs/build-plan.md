@@ -259,12 +259,13 @@ factorio_maxxing/
     trajectory.py
     loop.py
     run.py
+    watch.py               # live-watching camera, a side channel (D45)
 tests/
     test_package.py  test_goal.py  test_envs.py  test_rendering.py
     test_context.py  test_llm.py  test_llm_parsing.py  test_api_client.py
     test_verifier.py  test_stuck.py  test_human.py  test_trajectory.py
     test_loop.py  test_run.py
-    test_loop_offline.py  test_replay.py
+    test_loop_offline.py  test_replay.py  test_watch.py
     fixtures/
 configs/harness.example.json
 experiments/configs/       # empty until M1 complete

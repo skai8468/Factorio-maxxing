@@ -44,6 +44,7 @@ Human: high-level goal
 | `trajectory.py` | `TrajectoryRecorder`, JSONL output | Determine success |
 | `loop.py` | Control flow, termination, counters | Assemble prompts; format observations |
 | `run.py` | CLI, config loading | Business logic |
+| `watch.py` | Keep a connected client's camera on the agent (D45) | Touch the loop, the recorder or the agent |
 
 ## Data flow invariants
 

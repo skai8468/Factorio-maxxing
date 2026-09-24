@@ -165,6 +165,55 @@ a two-way exchange of growing sizes (14 -> 26 -> 50 -> 131 bytes) is a real hand
 Confirm the outcome in `docker logs`, which prints `[JOIN] <name> joined the game`, and
 `/players online` over RCON.
 
+### Watching a run live - join first, then follow the agent (D45)
+
+This is how FLE's own Twitch stream is made: `fle/overlay.py`, a control panel meant to
+sit beside a game client window, teleports player 1 to the agent over RCON every three
+seconds. `factorio_maxxing.watch` does the same, once a second, and puts the player in
+the spectator controller first so FLE's reset has no character of theirs to destroy.
+
+**The one rule: the client joins before any run, and never leaves.** A join forces a
+map save, and every save fails once FLE has loaded its tools into `storage` (D43). A
+freshly started cluster has loaded nothing, so that is the only time a join succeeds.
+If the client drops, restart the cluster before rejoining.
+
+1. **Restart the cluster**, so `storage` is empty. From `~/fle-work`:
+
+   ```bash
+   ~/venvs/fle/bin/fle cluster restart -n 1 -s open_world
+   ```
+
+2. **Join** from Factorio 2.0.77: *Multiplayer -> Connect to address ->
+   `localhost:34197`*. Mirrored networking (`%USERPROFILE%\.wslconfig`) makes
+   `localhost` work; the VM-IP instructions above are only needed without it. Confirm
+   with `docker logs cluster-factorio_0-1 2>&1 | grep JOIN`.
+
+3. **Start the camera**, in its own WSL terminal, and leave it running:
+
+   ```bash
+   cd ~/fle-work && source .env.local && ~/venvs/fle/bin/python -m factorio_maxxing.watch
+   ```
+
+   It logs only when its state changes: *waiting for a run to create the agent's
+   character*, then *following the agent* once the run has reset. `--interval 0.5`
+   tracks more tightly; Ctrl+C frees the camera.
+
+4. **Start the run** with the pause off - `configs/live-watchable.json` already has
+   `"pause_after_action": false`. A paused game is what dropped the client in D38.
+
+   ```bash
+   cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."
+   ```
+
+Further runs can follow in the same session without rejoining; each reset makes a new
+agent character and the camera picks it up. To stream, capture the Factorio window with
+OBS.
+
+**What it does not do.** It writes nothing to `storage` and moves no entity but the
+spectating player, and nothing FLE does for the agent reads a connected player - so a
+watched run behaves like an unwatched one with the pause off. It is still a
+demonstration, not a measurement: measured runs keep the pause on (D36).
+
 **`fle` writes state into the current working directory** - a `.env` template of `XXX`
 placeholders, and `.fle/data.db` for its SQLite store. Invoked through `wsl.exe`, the
 working directory is inherited from Windows, so running it from the repo drops those
@@ -413,9 +462,9 @@ the version pins above. Re-apply after any `uv pip install` that touches FLE (D3
 
 ### Building a timelapse of a run - the supported way to watch
 
-A game client is the wrong tool (D38): FLE freezes the tick between steps, and
-`create_agent_characters` destroys every character on the surface before making the
-agent's, which is an unowned entity with no player attached. Render instead.
+To watch a run *as it happens*, use a game client - see "Watching a run live" above
+(D45). Rendering is for a record of the run afterwards: one frame per step, drawn from
+the trajectory, needing no client at all.
 
 **Once**, to fetch the graphics. Without this FLE prints `Sprites not found ... Vision
 rendering will produce empty images` at startup and renders blank frames:

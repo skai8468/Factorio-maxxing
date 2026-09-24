@@ -1306,3 +1306,50 @@ yields one rendered frame per step showing the real factory, and `extract_map_im
 plus `ffmpeg` turns them into a video. D42 and D43 still stand: a game *client* still
 cannot join, for the unrelated reason that saves fail on functions in `storage`. Rendering
 is the route, which is what D38 said before D41 wrongly closed it.
+
+---
+
+## D45 - Watching a run live: join before the run, then follow the agent
+
+**Decision (research lead).** A run is watched live through a real Factorio client, using
+the method FLE's own streaming panel uses. The client joins a **freshly started**
+cluster before any run, and stays connected. A new command,
+`python -m factorio_maxxing.watch`, opens its own RCON connection and once a second puts
+every connected player in the spectator controller and teleports them to
+`storage.agent_characters[1]`. This reverses the consequence drawn in D42 and D43 ("there
+is no way to watch a run"); their findings stand.
+
+**Where the method comes from.** The FLE team streams Claude playing on Twitch, and
+their public write-ups do not say how. FLE's source does: `fle/overlay.py` is a NiceGUI
+control panel "designed to sit alongside the Factorio client window", whose camera
+tracking sends `game.players[1].teleport(storage.agent_characters[1].position)` over RCON
+every three seconds. The picture on the stream is a game client, not the renderer.
+
+**Why the earlier attempts failed and this one should not.** D43 is the constraint: a
+join forces a map save, and a save fails once FLE has put its tools - Lua functions - in
+`storage`. So the one window in which a client can join is before FLE loads anything.
+D42 joined during a run and D43 after a reset, both outside that window. D38 joined
+before, inside it, and was defeated by two other things: the between-step pause, which
+is now off in `configs/live-watchable.json` (D36, D39), and `create_agent_characters`
+destroying every character on the surface, the joined player's included. The spectator
+controller answers the second - a spectator has no character to lose - and is
+re-applied every tick so the reset cannot undo it. Autosave is already off in FLE's
+`server-settings.json` (`autosave_slots: 0`), so a long session triggers no save.
+
+**Why it cannot change what is measured.** FLE's agent character is a free-standing
+entity created by `create_agent_characters` and attached to no player. No FLE tool acts
+through a connected player: the only Lua that reads `game.players[...]` for an agent
+action is `rotate_entity`, which assigns it to a local it never uses, and `score` reads
+the goal description text. The camera command writes nothing to `storage` - verified
+against the live cluster. `watch` is a side channel beside the harness, not a component
+of it, so no invariant in the architecture table is touched.
+
+**What it costs.** A rejoin mid-session is impossible: a dropped client means restarting
+the cluster. A network desync would force a resync save and take the server down, as a
+late join does. And a watched run is a demonstration, not a measurement - it runs with
+the pause off, and D36 already says measured runs keep the pause on.
+
+**Status.** The Lua is verified against the live cluster in both of its no-op states
+(no agent; no client). The full path - a client joined before the run, followed through
+a whole goal - has not yet been observed. That is the first thing to do with it, and
+this entry is corrected if it fails.
