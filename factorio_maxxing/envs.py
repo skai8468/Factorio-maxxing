@@ -168,10 +168,16 @@ class RealFactorioEnv:
         Python too: ``unpause()`` restores it from there, and the agent's ``sleep``
         tool divides by it to turn ticks into wall-clock time. Called after every
         reset as well as here, since FLE's reset puts the speed back to its own.
+
+        ``instance_speed`` too, because FLE's gym env copies the speed once at
+        construction - 10x, at that point - and re-applies that copy at the start of
+        every ``step()``. Without it the speed holds through construction and reset
+        and reverts on the first step (measured: 1, 1, then 10).
         """
         if self.game_speed is None:
             return
         self._env.instance.set_speed(self.game_speed)
+        self._env.instance_speed = self.game_speed
 
     def _force_unpause(self) -> None:
         """Clear a pause left in the game by an earlier run (D39).

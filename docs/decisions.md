@@ -1418,3 +1418,11 @@ govern, and its character belongs to no player.
 `watchers` with 0 of the game's input actions allowed, centred on the agent's
 `unit_number`, client still connected. Whether the view is smooth through a whole run
 is for the watcher to confirm.
+
+**Correction (2026-09-24, found while testing slow mode).** As first committed, the knob
+held through construction and `reset()` and **reverted to 10x on the first step**
+(measured: 1, 1, then 10). FLE's gym env copies the speed into `instance_speed` when it
+is constructed - 10x at that moment - and every `step()` calls
+`set_speed_and_unpause(self.instance_speed)`. `_apply_speed` now sets `instance_speed`
+as well, and the same trace reads 1 after every step. The watched run that succeeded
+before this fix therefore ran at 10x from its first step on.

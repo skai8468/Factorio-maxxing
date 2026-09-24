@@ -393,6 +393,28 @@ def test_a_game_speed_is_applied_at_construction_and_again_after_reset(monkeypat
     assert fake_env.instance.speeds_set == [1, 1, 1]
 
 
+def test_a_game_speed_survives_steps(monkeypatch):
+    """FLE's step() re-applies the speed its gym env copied at construction."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    fake_env.instance_speed = 10
+    env = RealFactorioEnv(game_speed=1)
+    assert fake_env.instance_speed == 1
+    fake_env.instance_speed = 10
+    env.reset()
+    assert fake_env.instance_speed == 1
+
+
+def test_no_game_speed_leaves_the_step_speed_alone(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    fake_env.instance_speed = 10
+    RealFactorioEnv().reset()
+    assert fake_env.instance_speed == 10
+
+
 @pytest.mark.parametrize("speed", [0, -1])
 def test_a_non_positive_game_speed_is_refused(monkeypatch, speed):
     from factorio_maxxing.envs import RealFactorioEnv
