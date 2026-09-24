@@ -268,6 +268,29 @@ def test_game_speed_flag_overrides_and_its_absence_does_not(tmp_path):
     assert resolve_config(parse("--goal", "g", "--config", str(path))).game_speed == 1
 
 
+def test_live_passes_fast_mode(monkeypatch):
+    seen = {}
+
+    def record(task_key, fast_mode, **_):
+        seen["fast_mode"] = fast_mode
+        return object()
+
+    monkeypatch.setattr("factorio_maxxing.run.RealFactorioEnv", record)
+    build_environment(Config(environment="live", fast_mode=False))
+    assert seen["fast_mode"] is False
+    build_environment(Config(environment="live"))
+    assert seen["fast_mode"] is True
+
+
+def test_slow_flag_turns_fast_mode_off_and_its_absence_does_not(tmp_path):
+    assert resolve_config(parse("--goal", "g")).fast_mode is True
+    assert resolve_config(parse("--goal", "g", "--slow")).fast_mode is False
+
+    path = tmp_path / "c.json"
+    path.write_text('{"fast_mode": false}', encoding="utf-8")
+    assert resolve_config(parse("--goal", "g", "--config", str(path))).fast_mode is False
+
+
 def test_vision_flag_turns_rendering_on():
     assert resolve_config(parse("--goal", "g")).enable_vision is False
     assert resolve_config(parse("--goal", "g", "--vision")).enable_vision is True
@@ -301,6 +324,7 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     assert config.environment == "live"
     assert config.pause_after_action is False
     assert config.game_speed == 1
+    assert config.fast_mode is False
     assert config.enable_vision is True
     assert config.starting_inventory == {"burner-mining-drill": 3, "stone-furnace": 2}
     assert config.stuck_threshold == 8

@@ -138,6 +138,11 @@ class Config:
 
     A watching game client cannot keep up with 10x and reports the server as not
     responding, so watched runs set 1. Measured runs keep FLE's default (D46)."""
+    fast_mode: bool = True
+    """FLE's fast mode, in which the agent teleports and builds instantly. Live only.
+
+    False is FLE's slow mode: the character visibly walks. It changes what the agent's
+    tools return, so it is for watching a run, never for measuring one (D48)."""
     trajectory_dir: str = "trajectories"
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
@@ -225,6 +230,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         help="game speed for a live run; 1 lets a game client keep up (FLE uses 10)",
     )
+    parser.add_argument(
+        "--slow",
+        action="store_true",
+        help="FLE's slow mode, so the agent walks instead of teleporting (watching only)",
+    )
     return parser
 
 
@@ -251,6 +261,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "pause_after_action": False if args.no_pause else None,
         "enable_vision": True if args.vision else None,
         "game_speed": args.game_speed,
+        "fast_mode": False if args.slow else None,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
@@ -280,6 +291,7 @@ def _build_live_environment(config: Config) -> EnvProtocol:
             enable_vision=config.enable_vision,
             starting_inventory=config.starting_inventory,
             game_speed=config.game_speed,
+            fast_mode=config.fast_mode,
         )
     except ImportError as exc:
         raise ConfigError(

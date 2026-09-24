@@ -1426,3 +1426,58 @@ is constructed - 10x at that moment - and every `step()` calls
 `set_speed_and_unpause(self.instance_speed)`. `_apply_speed` now sets `instance_speed`
 as well, and the same trace reads 1 after every step. The watched run that succeeded
 before this fix therefore ran at 10x from its first step on.
+
+---
+
+## D48 - FLE's slow mode is a knob, for watching only
+
+**Finding.** With the camera following (D47), the agent still appeared to teleport. It
+does: FLE's registry hard-codes `fast=True`, and in fast mode `move_to` calls
+`player.teleport` from path point to path point, adding the walking time to
+`storage.elapsed_ticks` and sleeping it off in Python afterwards - a jump, then a pause.
+Crafting and placement are instant the same way.
+
+**Decision (research lead).** `RealFactorioEnv` takes `fast_mode`, a config key of the same
+name and a `--slow` flag. `True`, the default, is FLE's own. `configs/live-watchable.json`
+sets `false`. It is a demonstration setting and never a measured one.
+
+**What was measured, at a true 1x** (after the D46 correction), on a live session with
+a client watching:
+
+| Action | Slow mode |
+|---|---|
+| `move_to` | The character walks: ~70 tiles in ~10 s, `walking_state` true throughout, the queue counting 51 -> 0. `move_to` blocks until it arrives. |
+| `harvest_resource` | Works, **still instant** - FLE's slow harvest path is commented out upstream. |
+| `craft_item` | Works for one item. |
+| `place_entity` | Works. The entity lands 60 ticks later, in a tick handler. |
+| `insert_item` | Works; the drill reported `WORKING`. |
+
+No errors, the server stayed up, and the client stayed joined.
+
+**How it is switched on, and why that way.** FLE keeps the mode twice - `instance.fast`
+decides whether a tool's Python side polls until the action finishes, `storage.fast`
+decides whether its Lua side walks - and sets both once, at construction. Both are
+overridden after construction and again after every reset. The walking handler
+(`script.on_nth_tick(5, ...)`) is registered explicitly: FLE registers it only if
+`storage.fast` is unset when its tools load, and sets the flag immediately afterwards,
+so whether a running game has it depends on history. Without it the walking queue never
+advances and `move_to` waits forever.
+
+**Why it is never for measurement.** Slow mode changes what the agent's tools do, not
+just how they look:
+
+- **`move_to` returns where the walk started**, not where it ended - `(0, 0)` while the
+  character stood at `(-15.3, -50.4)`. Fast mode returns the destination. The API
+  reference tells the policy it gets the destination, so an agent that uses the return
+  value is misinformed. (`player_location` is stale within a program in *both* modes;
+  that is not a slow-mode effect.)
+- `craft_item` in slow mode stops after the first successful craft of a batch.
+- Placement completes in a tick handler. An error raised there - the target becoming
+  invalid within the 60 ticks - is a script error in an event, which a headless server
+  treats as fatal. Up-front validation makes this unlikely, but it is not impossible.
+- The Python side of `place_entity` waits exactly one second for a build that takes 60
+  ticks, which is a race at any speed below 1x.
+- Nothing upstream ever sets `fast=False`, so none of this is exercised by FLE's own use.
+
+A slow-mode run is therefore a different experiment from a fast-mode one and is not
+comparable with it, which is the same line D36 and D46 draw for the pause and the speed.

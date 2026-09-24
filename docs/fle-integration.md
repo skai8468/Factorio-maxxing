@@ -207,11 +207,12 @@ terminal is the one that holds WSL up.
    with `docker logs cluster-factorio_0-1 2>&1 | grep JOIN`.
 
 3. **Start the run**, in a second WSL terminal. `configs/live-watchable.json` sets the
-   two things a watching client needs: `"pause_after_action": false`, since a paused
-   game is what dropped the client in D38, and `"game_speed": 1`, since FLE's own 10x
-   is more than the server can simulate and the client falls behind until it reports
-   the server as not responding (D46). The run needs `.env.local` for its API key and
-   sprite path:
+   three things a watched run needs: `"pause_after_action": false`, since a paused
+   game is what dropped the client in D38; `"game_speed": 1`, since FLE's own 10x is
+   more than the server can simulate and the client falls behind until it reports the
+   server as not responding (D46); and `"fast_mode": false`, FLE's slow mode, so the
+   agent walks instead of teleporting (D48). None of these is for a measured run. The
+   run needs `.env.local` for its API key and sprite path:
 
    ```bash
    source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."

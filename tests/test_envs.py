@@ -165,6 +165,15 @@ class _FakeObservation:
         return self._payload
 
 
+class _FakeRCON:
+    def __init__(self):
+        self.sent: list[str] = []
+
+    def send_command(self, command):
+        self.sent.append(command)
+        return ""
+
+
 class _FakeInstance:
     """Stands in for FLE's FactorioInstance, whose pause flag is the point here.
 
@@ -178,6 +187,8 @@ class _FakeInstance:
         self.rcon_unpaused = False
         self.namespaces = [_FakeNamespace()]
         self.speeds_set: list[float] = []
+        self.fast = True
+        self.rcon_client = _FakeRCON()
 
     def set_speed(self, speed):
         self.speeds_set.append(speed)
@@ -422,6 +433,39 @@ def test_a_non_positive_game_speed_is_refused(monkeypatch, speed):
     install_fake_fle(monkeypatch, reset_result=({}, {}))
     with pytest.raises(ValueError, match="game_speed"):
         RealFactorioEnv(game_speed=speed)
+
+
+def test_fast_mode_is_fles_own_by_default(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv().reset()
+    assert fake_env.instance.fast is True
+    assert fake_env.instance.rcon_client.sent == []
+
+
+def test_slow_mode_switches_python_and_game_and_registers_walking(monkeypatch):
+    """D48: FLE keeps the mode twice, and the walking handler depends on load order."""
+    from factorio_maxxing.envs import WALKING_HANDLER_LUA, RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(fast_mode=False)
+    assert fake_env.instance.fast is False
+    assert fake_env.instance.rcon_client.sent == [
+        "/sc storage.fast = false",
+        WALKING_HANDLER_LUA,
+    ]
+
+
+def test_slow_mode_is_reapplied_after_reset(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv(fast_mode=False)
+    fake_env.instance.fast = True
+    env.reset()
+    assert fake_env.instance.fast is False
+    assert len(fake_env.instance.rcon_client.sent) == 4
 
 
 def test_no_starting_inventory_leaves_reset_alone(monkeypatch):

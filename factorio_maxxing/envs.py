@@ -85,6 +85,16 @@ class MockFactorioEnv:
 
 DEFAULT_TASK_KEY = "open_play"
 
+WALKING_HANDLER_LUA = (
+    "/sc script.on_nth_tick(5, function(event) if storage.walking_queues then "
+    "storage.actions.update_walking_queues() end end)"
+)
+"""FLE's own slow-mode walking handler, as ``move_to/server.lua`` registers it.
+
+FLE registers it only if ``storage.fast`` is unset when the tools load, and it sets the
+flag straight afterwards, so whether a running game has it depends on history. Without
+it a slow-mode walking queue never advances and ``move_to`` waits forever (D48)."""
+
 
 class RealFactorioEnv:
     """Adapter over FLE's ``FactorioGymEnv``, satisfying ``EnvProtocol``.
@@ -119,6 +129,13 @@ class RealFactorioEnv:
     client cannot follow that: it must simulate every tick the server does, and at 10x
     the server itself only manages about 150 ticks a second, so a watching client falls
     behind and reports the server as not responding. Watched runs set 1 (D46).
+
+    ``fast_mode`` defaults to FLE's own ``True``, in which the character teleports
+    between path points and crafting and placement are instant, with the time they would
+    have taken added to a counter. ``False`` is FLE's slow mode: the character walks,
+    and placement lands a second later. It changes what the agent's tools do - most
+    visibly, a slow ``move_to`` returns where the walk *started* - so it is for watching,
+    never for measurement (D48).
     """
 
     def __init__(
@@ -130,6 +147,7 @@ class RealFactorioEnv:
         pause_after_action: bool = True,
         starting_inventory: Mapping[str, int] | None = None,
         game_speed: float | None = None,
+        fast_mode: bool = True,
     ):
         from fle.env.gym_env.action import Action as FLEAction
         from fle.env.gym_env.registry import (
@@ -147,6 +165,7 @@ class RealFactorioEnv:
 
         self.task_key = task_key
         self.game_speed = game_speed
+        self.fast_mode = fast_mode
         self.pause_after_action = pause_after_action
         self.starting_inventory = dict(starting_inventory or {})
         self._fle_action = FLEAction
@@ -160,6 +179,23 @@ class RealFactorioEnv:
 
         self._force_unpause()
         self._apply_speed()
+        self._apply_fast_mode()
+
+    def _apply_fast_mode(self) -> None:
+        """Switch FLE to slow mode if asked, in Python and in the game together (D48).
+
+        FLE keeps the mode twice: ``instance.fast`` decides whether the Python side of a
+        tool polls the game until the action finishes, and ``storage.fast`` decides
+        whether the Lua side teleports or walks. FLE sets both once, at construction,
+        so both are overridden here, and the walking handler is registered explicitly
+        rather than trusting load order. Re-applied after reset, where it is harmless.
+        """
+        if self.fast_mode:
+            return
+        instance = self._env.instance
+        instance.fast = False
+        instance.rcon_client.send_command("/sc storage.fast = false")
+        instance.rcon_client.send_command(WALKING_HANDLER_LUA)
 
     def _apply_speed(self) -> None:
         """Set the configured game speed through FLE's own setter (D46).
@@ -210,6 +246,7 @@ class RealFactorioEnv:
         result = self._env.reset()
         observation = result[0] if isinstance(result, tuple) else result
         self._apply_speed()
+        self._apply_fast_mode()
         if self.starting_inventory:
             observation = self._stock_inventory()
         return observation
