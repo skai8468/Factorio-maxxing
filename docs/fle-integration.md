@@ -177,28 +177,32 @@ map save, and every save fails once FLE has loaded its tools into `storage` (D43
 freshly started cluster has loaded nothing, so that is the only time a join succeeds.
 If the client drops, restart the cluster before rejoining.
 
-1. **Restart the cluster**, so `storage` is empty. From `~/fle-work`:
+**WSL must stay up for the whole session.** WSL shuts its VM down shortly after the
+last WSL process exits, taking Docker and the server with it; the next `wsl` command
+boots it again and the container restarts. The give-away is a container that is always
+"Up a few seconds", and a `docker logs` full of `Quitting: signal.` with no `JOIN`
+attempt in it - the client was knocking on a VM that was not running. Keeping a WSL
+terminal open is enough, which is why the camera is started *before* the join: its
+terminal is the one that holds WSL up.
+
+1. **Open a WSL terminal and leave it open.** Restart the cluster so `storage` is empty,
+   then start the camera in the same terminal:
 
    ```bash
-   ~/venvs/fle/bin/fle cluster restart -n 1 -s open_world
+   cd ~/fle-work && ~/venvs/fle/bin/fle cluster restart -n 1 -s open_world
+   source .env.local && ~/venvs/fle/bin/python -m factorio_maxxing.watch
    ```
+
+   It logs only when its state changes: *waiting for a run to create the agent's
+   character* now, *following the agent* once a run has reset. `--interval 0.5` tracks
+   more tightly; Ctrl+C frees the camera.
 
 2. **Join** from Factorio 2.0.77: *Multiplayer -> Connect to address ->
    `localhost:34197`*. Mirrored networking (`%USERPROFILE%\.wslconfig`) makes
    `localhost` work; the VM-IP instructions above are only needed without it. Confirm
    with `docker logs cluster-factorio_0-1 2>&1 | grep JOIN`.
 
-3. **Start the camera**, in its own WSL terminal, and leave it running:
-
-   ```bash
-   cd ~/fle-work && source .env.local && ~/venvs/fle/bin/python -m factorio_maxxing.watch
-   ```
-
-   It logs only when its state changes: *waiting for a run to create the agent's
-   character*, then *following the agent* once the run has reset. `--interval 0.5`
-   tracks more tightly; Ctrl+C frees the camera.
-
-4. **Start the run** with the pause off - `configs/live-watchable.json` already has
+3. **Start the run**, in a second WSL terminal, with the pause off - `configs/live-watchable.json` already has
    `"pause_after_action": false`. A paused game is what dropped the client in D38.
 
    ```bash
