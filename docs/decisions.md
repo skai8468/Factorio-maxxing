@@ -1384,3 +1384,37 @@ walking happen at human speed. That is what makes it watchable, and it is why th
 a demonstration setting: game speed changes how much world time passes while the policy
 thinks with the pause off, so it belongs beside the model and goal in any reported
 result, as `starting_inventory` does (D40).
+
+---
+
+## D47 - The camera is the game's own follow, and the watcher is locked out
+
+**Finding.** D45's camera teleported a spectator to the agent once a second, which on
+screen is a jump every second rather than a view that tracks. The FLE team's stream
+tracks smoothly. A faster loop would only make the jumps smaller.
+
+**Decision.** `watch` puts each connected player in **remote view centred on the agent**
+(`LuaPlayer.centered_on`), which is the game's own entity-following camera - the one
+Factorio uses to follow a train - so the client moves the view every frame and `watch`
+only re-attaches it when something detaches it: a reset creating a new character, or a
+player joining. Each check is idempotent, and once attached it changes nothing.
+
+**Why god mode, not spectator.** Measured live: `set_controller{type = remote}` is
+silently ignored from the spectator controller - the player stayed at 5 - and succeeds
+from god (7, with 2 as the physical controller). God, like spectator, has no character
+for FLE's reset to destroy.
+
+**Why the watcher is now locked out.** Spectator could not affect the world. God and
+remote view can: a player in them can build, mine and open a machine to change its
+recipe. That would let the human touch the environment, which the architecture forbids
+(CLAUDE.md: the human provides text only). So every watcher is put in a `watchers`
+permission group that allows **no input action at all**, and that happens on every
+check, before the agent is even looked up, so a watcher is never free to act. The game
+then enforces the rule rather than trusting the person at the keyboard. The agent is
+unaffected: it acts through Lua called over RCON, which permission groups do not
+govern, and its character belongs to no player.
+
+**Verified live** on the session that ran D46: controller 7, physical 2, group
+`watchers` with 0 of the game's input actions allowed, centred on the agent's
+`unit_number`, client still connected. Whether the view is smooth through a whole run
+is for the watcher to confirm.

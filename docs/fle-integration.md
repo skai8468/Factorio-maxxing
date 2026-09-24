@@ -167,10 +167,13 @@ Confirm the outcome in `docker logs`, which prints `[JOIN] <name> joined the gam
 
 ### Watching a run live - join first, then follow the agent (D45)
 
-This is how FLE's own Twitch stream is made: `fle/overlay.py`, a control panel meant to
-sit beside a game client window, teleports player 1 to the agent over RCON every three
-seconds. `factorio_maxxing.watch` does the same, once a second, and puts the player in
-the spectator controller first so FLE's reset has no character of theirs to destroy.
+FLE's own Twitch stream is a game client: `fle/overlay.py`, a control panel meant to sit
+beside the client window, teleports player 1 to the agent over RCON every three seconds.
+`factorio_maxxing.watch` does better than a teleport loop, which jumps. It puts each
+player in god mode (no character for FLE's reset to destroy), then in remote view
+centred on the agent - the game's own follow camera, which tracks every frame - and in
+a `watchers` permission group that allows no input action, so the watcher can look but
+never act (D47).
 
 **The one rule: the client joins before any run, and never leaves.** A join forces a
 map save, and every save fails once FLE has loaded its tools into `storage` (D43). A
@@ -193,9 +196,10 @@ terminal is the one that holds WSL up.
    source .env.local && ~/venvs/fle/bin/python -m factorio_maxxing.watch
    ```
 
-   It logs only when its state changes: *waiting for a run to create the agent's
-   character* now, *following the agent* once a run has reset. `--interval 0.5` tracks
-   more tightly; Ctrl+C frees the camera.
+   It logs only when its state changes: *waiting for a Factorio client to connect*,
+   then *waiting for a run to create the agent's character*, then *following the
+   agent* once a run has reset. Ctrl+C stops it re-attaching the camera; the lock-out
+   stays until the cluster restarts.
 
 2. **Join** from Factorio 2.0.77: *Multiplayer -> Connect to address ->
    `localhost:34197`*. Mirrored networking (`%USERPROFILE%\.wslconfig`) makes

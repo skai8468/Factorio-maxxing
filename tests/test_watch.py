@@ -1,4 +1,4 @@
-"""Tests for the live-watching camera (decisions.md D45).
+"""Tests for the live-watching camera (decisions.md D45, D47).
 
 The Lua itself was exercised against a live cluster; these pin the Python around it:
 what is sent, when it logs, and that a failure never stops the camera.
@@ -39,11 +39,30 @@ def test_follow_lua_is_a_single_line():
     assert "\n" not in FOLLOW_LUA
 
 
-def test_follow_lua_targets_the_agent_and_every_connected_player():
+def test_follow_lua_uses_the_games_own_follow_camera():
+    """D47: centred remote view tracks every frame; a teleport loop only jumps."""
     assert "storage.agent_characters[1]" in FOLLOW_LUA
     assert "game.connected_players" in FOLLOW_LUA
-    assert "defines.controllers.spectator" in FOLLOW_LUA
-    assert "teleport(c.position, c.surface)" in FOLLOW_LUA
+    assert "defines.controllers.remote" in FOLLOW_LUA
+    assert "p.centered_on = c" in FOLLOW_LUA
+    assert "teleport" not in FOLLOW_LUA
+
+
+def test_follow_lua_keeps_watchers_out_of_the_game():
+    """The human provides text only; the permission group makes the game enforce it."""
+    assert f'create_group("{watch.WATCHER_GROUP}")' in FOLLOW_LUA
+    assert "set_allows_action(a, false)" in FOLLOW_LUA
+    assert "p.permission_group = g" in FOLLOW_LUA
+    # Locked out before the agent is looked up, so a watcher is never free to act.
+    assert FOLLOW_LUA.index("p.permission_group = g") < FOLLOW_LUA.index(
+        "storage.agent_characters"
+    )
+
+
+def test_follow_lua_has_no_unformatted_braces():
+    """FOLLOW_LUA is an f-string; a doubled brace left in would be a Lua syntax error."""
+    assert "{{" not in FOLLOW_LUA and "}}" not in FOLLOW_LUA
+    assert "{type = defines.controllers.god}" in FOLLOW_LUA
 
 
 def test_follow_lua_keeps_its_status_strings_intact():
@@ -61,7 +80,7 @@ def test_follow_once_treats_no_reply_as_empty():
     assert follow_once(FakeRCON([None])) == ""
 
 
-def test_watch_moves_the_camera_once_per_tick_and_sleeps_between(caplog):
+def test_watch_checks_once_per_tick_and_sleeps_between(caplog):
     rcon = FakeRCON(["following"] * 3)
     sleeps = []
     watch.watch(rcon, 0.5, sleep=sleeps.append, ticks=3)
@@ -80,7 +99,7 @@ def test_watch_logs_only_when_the_status_changes(caplog):
     ]
 
 
-def test_watch_survives_a_failed_move(caplog):
+def test_watch_survives_a_failed_check(caplog):
     rcon = FakeRCON([ConnectionError("blip"), "following"])
     with caplog.at_level(logging.INFO):
         watch.watch(rcon, 0, sleep=lambda _: None, ticks=2)
