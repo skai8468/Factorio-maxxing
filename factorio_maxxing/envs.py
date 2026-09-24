@@ -7,7 +7,9 @@ deliberately does not read the submitted Python: deciding transitions from arbit
 code would mean building a fake Factorio. Real Factorio behaviour belongs in FLE.
 """
 
-from collections.abc import Mapping, Sequence
+import logging
+import time
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
@@ -95,6 +97,75 @@ FLE registers it only if ``storage.fast`` is unset when the tools load, and it s
 flag straight afterwards, so whether a running game has it depends on history. Without
 it a slow-mode walking queue never advances and ``move_to`` waits forever (D48)."""
 
+FAST_ACTIONS = ("inspect_inventory", "place_entity", "craft_item", "harvest_resource")
+"""Tools whose Lua keeps FLE's fast-mode behaviour even in slow mode (D48 correction).
+
+Slow mode is only wanted for walking. In the rest of FLE it is unmaintained and
+dangerous: slow ``inspect_inventory`` opens a GUI on the agent's character and closes it
+from a tick handler that raises ``Not a player`` - a script error in an event, which
+killed the server on the first watched run to inspect a furnace. Slow ``place_entity``
+builds from a tick handler as well, and slow ``craft_item`` stops after one item.
+``harvest_resource`` is here so it accounts mining time exactly as a measured run
+does."""
+
+WALK_TIMEOUT = 120.0
+"""Seconds ``move_to`` may wait for a walk to finish before giving up. A long walk at 1x
+is tens of seconds; this only exists so a stuck queue cannot hang a run."""
+
+
+def wait_for_walk(
+    send: Callable[[str], object],
+    player_index: int,
+    *,
+    poll: float = 0.25,
+    timeout: float = WALK_TIMEOUT,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> bool:
+    """Block until the agent's walking queue is empty; False if it timed out.
+
+    Slow-mode ``move_to`` starts a walk and returns at once. FLE's own wait for it lives
+    behind its Python-side slow flag, which also swallows placement errors and makes
+    harvesting walk off after more ore - so the Python side stays fast and this is
+    hooked onto ``move_to`` instead (D48 correction).
+    """
+    command = f"/sc rcon.print(storage.actions.get_walking_queue_length({player_index}))"
+    deadline = clock() + timeout
+    while str(send(command)).strip() not in ("0", ""):
+        if clock() >= deadline:
+            return False
+        sleep(poll)
+    return True
+
+
+FAST_ACTIONS_LUA = " ".join(
+    f"""
+storage.harness_fast_wrapped = storage.harness_fast_wrapped or {{}}
+for _, name in pairs({{{", ".join(f'"{name}"' for name in FAST_ACTIONS)}}}) do
+  local current = storage.actions[name]
+  if current and storage.harness_fast_wrapped[name] ~= current then
+    local original = current
+    local wrapper = function(...)
+      local saved = storage.fast
+      storage.fast = true
+      local result = table.pack(pcall(original, ...))
+      storage.fast = saved
+      if not result[1] then error(result[2], 0) end
+      return table.unpack(result, 2, result.n)
+    end
+    storage.actions[name] = wrapper
+    storage.harness_fast_wrapped[name] = wrapper
+  end
+end
+""".split()
+)
+"""Run each of ``FAST_ACTIONS`` with ``storage.fast`` set for the length of the call.
+
+FLE reads the flag at call time and looks the action up at call time too, so a wrapper
+changes the behaviour without patching FLE's files. Errors pass through unchanged, with
+level 0 so no position is prepended to FLE's own message. Idempotent: a tool FLE has
+reloaded is wrapped again, and one already wrapped is left alone."""
+
 
 class RealFactorioEnv:
     """Adapter over FLE's ``FactorioGymEnv``, satisfying ``EnvProtocol``.
@@ -133,9 +204,11 @@ class RealFactorioEnv:
     ``fast_mode`` defaults to FLE's own ``True``, in which the character teleports
     between path points and crafting and placement are instant, with the time they would
     have taken added to a counter. ``False`` is FLE's slow mode: the character walks,
-    and placement lands a second later. It changes what the agent's tools do - most
-    visibly, a slow ``move_to`` returns where the walk *started* - so it is for watching,
-    never for measurement (D48).
+    and nothing else changes: placing, crafting, harvesting and inventory inspection keep
+    their fast behaviour, because FLE's slow versions of them crash the server, hide
+    errors or wander off. It still
+    changes what the agent sees - a slow ``move_to`` returns where the walk *started* -
+    so it is for watching, never for measurement (D48).
     """
 
     def __init__(
@@ -182,20 +255,36 @@ class RealFactorioEnv:
         self._apply_fast_mode()
 
     def _apply_fast_mode(self) -> None:
-        """Switch FLE to slow mode if asked, in Python and in the game together (D48).
+        """Make the agent walk, and change nothing else (D48 and its correction).
 
-        FLE keeps the mode twice: ``instance.fast`` decides whether the Python side of a
-        tool polls the game until the action finishes, and ``storage.fast`` decides
-        whether the Lua side teleports or walks. FLE sets both once, at construction,
-        so both are overridden here, and the walking handler is registered explicitly
-        rather than trusting load order. Re-applied after reset, where it is harmless.
+        FLE keeps the mode twice: ``storage.fast`` decides whether a tool's Lua
+        teleports or walks, and ``instance.fast`` whether its Python side waits for
+        the action. Only walking is wanted, so:
+
+        - ``storage.fast`` is cleared, and every tool that reads it except ``move_to``
+          is wrapped back to fast behaviour (``FAST_ACTIONS_LUA``);
+        - the walking handler is registered explicitly, not trusted to load order;
+        - ``instance.fast`` is left alone, and a post-tool hook - FLE's own extension
+          point - makes ``move_to`` wait for the walk to finish instead.
+
+        Re-applied after reset, where it is harmless; the hook is added once.
         """
         if self.fast_mode:
             return
         instance = self._env.instance
-        instance.fast = False
         instance.rcon_client.send_command("/sc storage.fast = false")
         instance.rcon_client.send_command(WALKING_HANDLER_LUA)
+        instance.rcon_client.send_command(f"/sc {FAST_ACTIONS_LUA}")
+        hooks = instance.post_tool_hooks.setdefault("move_to", [])
+        if self._walk_hook not in hooks:
+            hooks.append(self._walk_hook)
+
+    def _walk_hook(self, tool, _result) -> None:
+        """Post-hook on ``move_to``: return control only once the character arrives."""
+        if not wait_for_walk(
+            self._env.instance.rcon_client.send_command, tool.player_index
+        ):
+            logging.warning("walk did not finish within %.0fs", WALK_TIMEOUT)
 
     def _apply_speed(self) -> None:
         """Set the configured game speed through FLE's own setter (D46).

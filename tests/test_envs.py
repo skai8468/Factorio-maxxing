@@ -5,6 +5,8 @@ reset, step. The determinism cases also pin decisions.md D10: the mock must not
 interpret submitted Python.
 """
 
+import types
+
 import pytest
 
 from factorio_maxxing.envs import Action, EnvProtocol, MockFactorioEnv, MockFrame
@@ -189,6 +191,7 @@ class _FakeInstance:
         self.speeds_set: list[float] = []
         self.fast = True
         self.rcon_client = _FakeRCON()
+        self.post_tool_hooks: dict = {}
 
     def set_speed(self, speed):
         self.speeds_set.append(speed)
@@ -442,30 +445,111 @@ def test_fast_mode_is_fles_own_by_default(monkeypatch):
     RealFactorioEnv().reset()
     assert fake_env.instance.fast is True
     assert fake_env.instance.rcon_client.sent == []
+    assert fake_env.instance.post_tool_hooks == {}
 
 
-def test_slow_mode_switches_python_and_game_and_registers_walking(monkeypatch):
-    """D48: FLE keeps the mode twice, and the walking handler depends on load order."""
-    from factorio_maxxing.envs import WALKING_HANDLER_LUA, RealFactorioEnv
+def test_slow_mode_makes_only_walking_slow(monkeypatch):
+    """D48: storage.fast cleared, other tools wrapped back, walking handler registered."""
+    from factorio_maxxing.envs import (
+        FAST_ACTIONS_LUA,
+        WALKING_HANDLER_LUA,
+        RealFactorioEnv,
+    )
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
     RealFactorioEnv(fast_mode=False)
-    assert fake_env.instance.fast is False
     assert fake_env.instance.rcon_client.sent == [
         "/sc storage.fast = false",
         WALKING_HANDLER_LUA,
+        f"/sc {FAST_ACTIONS_LUA}",
     ]
 
 
-def test_slow_mode_is_reapplied_after_reset(monkeypatch):
+def test_slow_mode_leaves_fles_python_side_fast(monkeypatch):
+    """FLE's Python slow path swallows placement errors and re-walks harvests."""
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(fast_mode=False).reset()
+    assert fake_env.instance.fast is True
+
+
+def test_slow_mode_hooks_move_to_once_across_resets(monkeypatch):
     from factorio_maxxing.envs import RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
     env = RealFactorioEnv(fast_mode=False)
-    fake_env.instance.fast = True
     env.reset()
-    assert fake_env.instance.fast is False
-    assert len(fake_env.instance.rcon_client.sent) == 4
+    env.reset()
+    assert len(fake_env.instance.post_tool_hooks["move_to"]) == 1
+    assert len(fake_env.instance.rcon_client.sent) == 9, "Lua re-applied every reset"
+
+
+def test_the_move_to_hook_waits_for_the_walk(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(fast_mode=False)
+    queue = iter(["3", "1", "0"])
+    fake_env.instance.rcon_client.send_command = lambda command: next(queue)
+    monkeypatch.setattr("factorio_maxxing.envs.time.sleep", lambda _: None)
+
+    hook = fake_env.instance.post_tool_hooks["move_to"][0]
+    hook(types.SimpleNamespace(player_index=1), None)
+    assert next(queue, "drained") == "drained"
+
+
+def test_slow_mode_keeps_everything_but_walking_fast():
+    """D48 correction: FLE's slow inspect_inventory killed the server from a handler."""
+    from factorio_maxxing.envs import FAST_ACTIONS, FAST_ACTIONS_LUA
+
+    assert set(FAST_ACTIONS) == {
+        "inspect_inventory",
+        "place_entity",
+        "craft_item",
+        "harvest_resource",
+    }
+    assert "move_to" not in FAST_ACTIONS_LUA
+    for name in FAST_ACTIONS:
+        assert f'"{name}"' in FAST_ACTIONS_LUA
+    assert "storage.fast = true" in FAST_ACTIONS_LUA
+    assert "storage.fast = saved" in FAST_ACTIONS_LUA
+    assert "error(result[2], 0)" in FAST_ACTIONS_LUA
+    assert chr(10) not in FAST_ACTIONS_LUA and "{{" not in FAST_ACTIONS_LUA
+
+
+def test_wait_for_walk_returns_once_the_queue_is_empty():
+    from factorio_maxxing.envs import wait_for_walk
+
+    replies = iter(["2", "1", "0"])
+    sent, sleeps = [], []
+
+    def send(command):
+        sent.append(command)
+        return next(replies)
+
+    assert wait_for_walk(send, 1, sleep=sleeps.append) is True
+    assert len(sent) == 3 and len(sleeps) == 2
+    assert "get_walking_queue_length(1)" in sent[0]
+
+
+def test_wait_for_walk_gives_up_at_the_timeout():
+    from factorio_maxxing.envs import wait_for_walk
+
+    now = iter([0.0, 1.0, 2.0, 5.0])
+    assert (
+        wait_for_walk(
+            lambda _: "4", 1, timeout=3.0, sleep=lambda _: None, clock=lambda: next(now)
+        )
+        is False
+    )
+
+
+def test_wait_for_walk_treats_no_queue_as_arrived():
+    """An empty reply means the queue does not exist, i.e. nothing is walking."""
+    from factorio_maxxing.envs import wait_for_walk
+
+    assert wait_for_walk(lambda _: "", 1, sleep=lambda _: None) is True
 
 
 def test_no_starting_inventory_leaves_reset_alone(monkeypatch):

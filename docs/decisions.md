@@ -1481,3 +1481,40 @@ just how they look:
 
 A slow-mode run is therefore a different experiment from a fast-mode one and is not
 comparable with it, which is the same line D36 and D46 draw for the pause and the speed.
+
+**Correction (2026-09-24): slow mode now means walking only.** The first long watched run
+in slow mode **killed the server** after about a minute and a half:
+
+```
+Error while running event level::on_nth_tick(60)
+Not a player.
+[string "storage.actions.inspect_inventory = function(..."]:49
+```
+
+Slow `inspect_inventory` opens the inspected entity's GUI on the agent's *character* and
+closes it from a 60-tick handler; assigning `opened` on a character raises, and a script
+error inside an event is fatal to a headless server. The short test above never
+inspected an entity, so it never reached this. Two more problems then turned up in FLE's
+**Python** slow path: `place_entity` skips its error check, so a placement 750 tiles out
+of reach reported success; and `harvest_resource` walks off to the nearest resource and
+harvests again until it has the quantity - behaviour a measured run never has.
+
+So slow mode was narrowed to the one thing it is for:
+
+- **Lua:** `storage.fast` is cleared, and every other tool that reads it -
+  `inspect_inventory`, `place_entity`, `craft_item`, `harvest_resource` - is wrapped to run
+  with `storage.fast = true` for the length of the call. FLE looks both the flag and the
+  action up at call time, so the wrapper needs no patch to FLE's files, and errors pass
+  through unchanged.
+- **Python:** `instance.fast` is left at FLE's `True`. The one wait slow mode needs -
+  `move_to` returning only once the character arrives - is a post-tool hook, FLE's own
+  extension point, polling the walking queue with a 120 s limit.
+
+Re-measured live: a walk of ~9 s that `move_to` waits out; a furnace placed and its
+inventory inspected with the server still up; 5 ore harvested with the same time
+accounting as a measured run; a crafting error and an out-of-reach placement both
+reported with FLE's own message. The table above is superseded where it disagrees.
+
+What still differs from a measured run: the walk takes real time rather than being
+accounted on paper, and `move_to` still **returns where the walk started**. Slow mode
+remains for watching only.
