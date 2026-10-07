@@ -179,6 +179,7 @@ field only — it never replaces raw text and never affects control flow.
   "human": "interactive",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 3,
+  "non_done_threshold": null,
   "max_interventions_without_progress": 3,
   "verification_interval": 1,
   "max_steps": 32,
@@ -188,6 +189,10 @@ field only — it never replaces raw text and never affects control flow.
   "api_reference": ""
 }
 ```
+
+`non_done_threshold` splits the default detector's single threshold: `stuck_threshold`
+governs repeated errors, `non_done_threshold` consecutive non-DONE verdicts. `null` uses
+`stuck_threshold` for both, as before. Long goals set it higher (`decisions.md` D50).
 
 API keys come from environment variables, never this file. For an identity-linked API
 key, `ANTHROPIC_WORKSPACE_ID` must be set alongside the key (`decisions.md` D27).

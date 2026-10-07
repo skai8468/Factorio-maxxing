@@ -4,6 +4,7 @@
   "human": "interactive",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 8,
+  "non_done_threshold": 8,
   "max_interventions_without_progress": 5,
   "verification_interval": 1,
   "max_steps": 32,

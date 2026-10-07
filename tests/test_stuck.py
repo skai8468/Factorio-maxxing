@@ -172,6 +172,32 @@ def test_error_signature_is_the_fast_path_when_verification_is_sparse():
     assert "repeated execution errors" in reason
 
 
+def test_non_done_threshold_lets_a_long_healthy_build_run_on():
+    """D50: on a long goal non-DONE is the normal state, not evidence of being stuck.
+
+    Measured live: at a shared threshold of 3 a 42-step build was asked about every
+    three steps while its entity list grew almost every step.
+    """
+    detector = default_detector(3, non_done_threshold=10)
+    assert check(detector, [NOT_DONE] * 9, errors=[""] * 9) == (False, "")
+    stuck, reason = check(detector, [NOT_DONE] * 10, errors=[""] * 10)
+    assert stuck is True
+    assert reason == "10 consecutive non-DONE verifications"
+
+
+def test_non_done_threshold_leaves_repeated_errors_on_the_short_threshold():
+    detector = default_detector(3, non_done_threshold=10)
+    stuck, reason = check(detector, [NOT_DONE] * 3, errors=["NameError: x"] * 3)
+    assert stuck is True
+    assert "repeated execution errors" in reason
+
+
+def test_non_done_threshold_defaults_to_the_shared_threshold():
+    """Every run before D50 used one threshold for both halves; None keeps that."""
+    assert check(default_detector(3), [NOT_DONE] * 3, errors=NO_ERRORS)[0] is True
+    assert check(default_detector(3, None), [NOT_DONE] * 3, errors=NO_ERRORS)[0] is True
+
+
 def test_composite_requires_at_least_one_detector():
     with pytest.raises(ValueError, match="at least one detector"):
         CompositeStuckDetector([])

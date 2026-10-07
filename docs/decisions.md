@@ -1552,3 +1552,47 @@ the verdict, is checked after every live run.
 
 **Comparability.** Earlier runs rendered the count only. No earlier goal concerned
 research, so no earlier verdict could have depended on the difference.
+
+---
+
+## D50 - The non-DONE half of the stuck detector takes its own threshold
+
+**Decision (research lead).** `default_detector` takes two thresholds. `stuck_threshold`
+now governs only the repeated-error half; a new config key, `non_done_threshold`, governs
+the consecutive-non-DONE half, with a `--non-done-threshold` flag. `None`, the default,
+uses `stuck_threshold` for both, so every existing config behaves as before.
+`configs/live-measured.json` - the long-goal measured config - sets error 3, non-DONE 10,
+and `max_interventions_without_progress` 8.
+
+**Finding, measured 2026-10-08.** The goal-5 rehearsal (`20261008T014715-4713d9d3`,
+42 steps) requested help **13 times, every third step without exception**, at the shared
+threshold of 3. The operator declined all 13, because the agent was visibly building:
+its entity list grew on almost every step. Build-plan section 8 and D7 already forbid
+this - consecutive non-DONE "must not be the sole signal", because "a detector firing on
+that interrupts a healthy build". The composite fires when *either* half fires, so on a
+long goal the non-DONE half was the sole signal in practice. The thresholds were chosen
+for goals of at most 32 steps (section 8a), and goal 5 is not one.
+
+**Why separate thresholds, and not the alternatives.**
+
+- *Raise the shared threshold* (config only) still interrupts a healthy build, just less
+  often, and slows the repeated-error half - the half that is genuine evidence of being
+  stuck at any goal length - to the same count.
+- *A progress-aware detector* (non-DONE only while inventory, entities and research stand
+  still) is the principled fix, and would also give `interventions_without_progress` a
+  real progress reset. It is the "flat production flow" detector that section 8 lists as
+  a future ablation candidate, so it stays out of M0/M1 scope.
+
+Separate thresholds keep both of the plan's initial detectors and change only how long
+the weaker signal waits.
+
+**The cap was the other half of the problem.** `interventions` never resets - with no
+progress signal at M0/M1 it is a hard cap per goal - so at 3 the third answer a human gave
+ended a goal that may need far more than three nudges. It is a config value already;
+`live-measured.json` sets 8.
+
+**Comparability.** Goals 3 and 4 were measured at 3/3 and requested help zero times, so
+neither result depends on the change. Any result from a long goal must report both
+thresholds and the cap beside the model and the goal, as D40 asks of the starting
+inventory. The trajectory does not yet record the run's config, so for now that means
+keeping the config file and command line with the result.

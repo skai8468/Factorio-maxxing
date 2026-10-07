@@ -102,6 +102,13 @@ class Config:
     human: str = "interactive"
     stuck_detector: str = DEFAULT_DETECTOR
     stuck_threshold: int = 3
+    non_done_threshold: int | None = None
+    """Consecutive non-DONE verifications before help is requested. None uses
+    `stuck_threshold`, as every run before D50 did.
+
+    `stuck_threshold` then governs only repeated errors. A long goal is non-DONE for
+    most of its length, so at 3 the detector asked for help every three steps of a
+    healthy build; a long goal sets this higher, as a backstop (D50)."""
     max_interventions_without_progress: int = 3
     verification_interval: int = 1
     max_steps: int = 32
@@ -209,6 +216,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--verification-interval", type=int)
     parser.add_argument("--stuck-threshold", type=int)
+    parser.add_argument(
+        "--non-done-threshold",
+        type=int,
+        help="non-DONE verdicts in a row before help is requested (D50)",
+    )
     parser.add_argument("--history-length", type=int)
     parser.add_argument("--trajectory-dir")
     parser.add_argument(
@@ -254,6 +266,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "max_steps": args.max_steps,
         "verification_interval": args.verification_interval,
         "stuck_threshold": args.stuck_threshold,
+        "non_done_threshold": args.non_done_threshold,
         "history_length": args.history_length,
         "trajectory_dir": args.trajectory_dir,
         "api_reference": args.api_reference,
@@ -349,7 +362,7 @@ def build_detector(config: Config):
             f"unknown stuck detector: {config.stuck_detector}; "
             f"the only detector is {DEFAULT_DETECTOR}"
         )
-    return default_detector(config.stuck_threshold)
+    return default_detector(config.stuck_threshold, config.non_done_threshold)
 
 
 def main(argv: list[str] | None = None) -> int:

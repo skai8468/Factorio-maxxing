@@ -154,8 +154,22 @@ class CompositeStuckDetector:
         return NOT_STUCK
 
 
-def default_detector(threshold: int = STUCK_THRESHOLD) -> CompositeStuckDetector:
-    """The `consecutive_failures+error_signature` pairing named in the config."""
+def default_detector(
+    threshold: int = STUCK_THRESHOLD, non_done_threshold: int | None = None
+) -> CompositeStuckDetector:
+    """The `consecutive_failures+error_signature` pairing named in the config.
+
+    The two halves take separate thresholds (D50). A repeated error is evidence of being
+    stuck at any goal length, so it keeps the short `threshold`. A run of non-DONE
+    verdicts is evidence only on a short goal - on a long one it is the normal state of
+    a healthy build - so `non_done_threshold` lets it act as a backstop instead. None
+    keeps the original single threshold for both.
+    """
+    if non_done_threshold is None:
+        non_done_threshold = threshold
     return CompositeStuckDetector(
-        [RepeatedErrorDetector(threshold), ConsecutiveNonDoneDetector(threshold)]
+        [
+            RepeatedErrorDetector(threshold),
+            ConsecutiveNonDoneDetector(non_done_threshold),
+        ]
     )

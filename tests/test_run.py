@@ -61,6 +61,7 @@ def test_defaults_match_the_documented_config():
     assert config.human == "interactive"
     assert config.stuck_detector == "consecutive_failures+error_signature"
     assert config.stuck_threshold == 3
+    assert config.non_done_threshold is None
     assert config.max_interventions_without_progress == 3
     assert config.verification_interval == 1
     assert config.max_steps == 32
@@ -328,6 +329,7 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     assert config.enable_vision is True
     assert config.starting_inventory == {"burner-mining-drill": 3, "stone-furnace": 2}
     assert config.stuck_threshold == 8
+    assert config.non_done_threshold == 8
     assert config.max_interventions_without_progress == 5
     assert Path(config.api_reference).is_file()
 
@@ -386,6 +388,31 @@ def test_a_scripted_human_is_built_from_a_hint_file(tmp_path):
     human = build_human(Config(human="scripted"), str(path))
     assert isinstance(human, ScriptedHuman)
     assert human.hints[0].text == "fuel it"
+
+
+def test_build_detector_passes_both_thresholds():
+    detector = build_detector(Config(stuck_threshold=3, non_done_threshold=10))
+    error_half, non_done_half = detector.detectors
+    assert error_half.threshold == 3
+    assert non_done_half.threshold == 10
+
+
+def test_non_done_threshold_flag_overrides_config():
+    args = build_parser().parse_args(
+        ["--goal", "g", "--mock", "--non-done-threshold", "12"]
+    )
+    assert resolve_config(args).non_done_threshold == 12
+
+
+def test_live_measured_config_separates_the_thresholds():
+    """The long-goal settings of D50; every key must be one the harness understands."""
+    config = Config(**load_config("configs/live-measured.json"))
+    assert config.environment == "live"
+    assert config.pause_after_action is True
+    assert config.fast_mode is True
+    assert config.stuck_threshold == 3
+    assert config.non_done_threshold == 10
+    assert config.max_interventions_without_progress == 8
 
 
 def test_an_unknown_stuck_detector_is_refused():
