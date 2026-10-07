@@ -6,7 +6,7 @@ formatting, missing/empty fields.
 
 from enum import Enum
 
-from factorio_maxxing.rendering import render_observation
+from factorio_maxxing.rendering import MAX_TECHNOLOGIES, render_observation
 
 FULL_OBSERVATION = {
     "inventory": {"iron-plate": 12, "coal": 3},
@@ -124,7 +124,7 @@ def test_research_renders_current_progress_and_totals():
     assert body_of(render_observation(FULL_OBSERVATION), "RESEARCH") == [
         "current: automation",
         "remaining: automation-science-pack 3",
-        "researched: 1/2",
+        "researched: 1/2 (steel-processing)",
     ]
 
 
@@ -216,7 +216,43 @@ def test_live_flows_render_item_names_not_a_bare_count():
 def test_live_technologies_list_is_counted():
     """FLE's dataclass types technologies as a dict; the observation delivers a list."""
     body = body_of(render_observation(LIVE_OBSERVATION), "RESEARCH")
-    assert "researched: 1/2" in body
+    assert "researched: 1/2 (automation)" in body
+
+
+def test_researched_technologies_are_named_not_only_counted():
+    """A count cannot tell a verifier whether the goal's technology is researched (D49).
+
+    Measured live: Factorio 2.0 starts with automation-science-pack researched, the
+    agent confused it with automation, and the verifier accepted "already researched".
+    """
+    obs = {
+        "research": {
+            "technologies": [
+                {"name": "automation-science-pack", "researched": 1},
+                {"name": "automation", "researched": 0},
+            ]
+        }
+    }
+    body = body_of(render_observation(obs), "RESEARCH")
+    assert "researched: 1/2 (automation-science-pack)" in body
+
+
+def test_nothing_researched_says_none():
+    obs = {"research": {"technologies": {"automation": {"researched": False}}}}
+    body = body_of(render_observation(obs), "RESEARCH")
+    assert "researched: 0/1 (none)" in body
+
+
+def test_researched_names_are_truncated_with_a_remainder_count():
+    technologies = [
+        {"name": f"tech-{i}", "researched": 1} for i in range(MAX_TECHNOLOGIES + 3)
+    ]
+    body = body_of(
+        render_observation({"research": {"technologies": technologies}}), "RESEARCH"
+    )
+    line = next(line for line in body if line.startswith("researched:"))
+    assert line.endswith(f"tech-{MAX_TECHNOLOGIES - 1}, ... and 3 more)")
+    assert f"tech-{MAX_TECHNOLOGIES}," not in line
 
 
 def test_no_active_research_does_not_report_zero_remaining():

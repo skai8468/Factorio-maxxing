@@ -328,7 +328,7 @@ ENTITIES
   stone-furnace at (63, -52) facing UP [NO_FUEL]
 RESEARCH
   current: none
-  researched: 1/196
+  researched: 1/196 (automation-science-pack)
 FLOWS
   input: stone 5
   output: stone-furnace 1, stone 12
@@ -348,7 +348,11 @@ would mean the recorder editing what it observed, which cuts against its passive
 **41,455 bytes, of which `research` is 40,853 - 98.5%**, because it carries the entire
 technology tree with prerequisites and ingredients on every observation. Everything else
 is under 200 bytes. This is a *trajectory* cost, not a prompt cost: the renderer collapses
-`technologies` to a `researched: N/M` count, so the tree never reaches the model.
+`technologies` to a `researched: N/M` count plus the researched names, so the tree never
+reaches the model. The names were added in D49: a count alone let a verifier accept
+"Research automation" with automation unresearched. Factorio 2.0 starts with exactly one
+technology researched, `automation-science-pack`, which is easy to confuse with
+`automation`.
 
 ### Where execution errors live - measured 2026-09-10
 

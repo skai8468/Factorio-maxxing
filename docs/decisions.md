@@ -1518,3 +1518,37 @@ reported with FLE's own message. The table above is superseded where it disagree
 What still differs from a measured run: the walk takes real time rather than being
 accounted on paper, and `move_to` still **returns where the walk started**. Slow mode
 remains for watching only.
+
+---
+
+## D49 - Research is rendered by name, because a count let the verifier be fooled
+
+**Finding, measured 2026-10-08.** The goal-5 rehearsal, "Research automation", ended with
+the verifier's DONE at step 41 of 42 - and the recorded state contradicts it:
+`automation` has `researched = 0`, nothing is being researched, the queue is empty, and
+no lab was ever placed. The agent had crafted one automation science pack and called
+`set_research(Technology.AutomationSciencePack)`. In Factorio 2.0 that is a technology of
+its own, researched at the start of every game, so FLE answered *"Technology
+automation-science-pack is already researched"* - and the verifier took that line as
+the goal met. (Trajectory `20261008T014715-4713d9d3`.)
+
+This is the separation in build-plan section 8 doing its job: the passive recorder
+disproving the verifier. It is a result in its own right, and the run is a false DONE,
+not a completion.
+
+**Why the verifier could not do better.** The `RESEARCH` section rendered the technology
+tree as `researched: N/M` only, so the verifier was never told *which* technologies were
+researched. The one research fact it could read was the agent's own misleading output.
+
+**Decision.** `RESEARCH` names the researched technologies after the count:
+`researched: 1/196 (automation-science-pack)`, or `(none)`. Names are truncated after
+32 with a remainder count, as entities are, so a late-game tree cannot crowd the
+context. The rendering is shared, so the policy sees the same line - which also tells it
+that `automation-science-pack` is not `automation`.
+
+**What it does not do.** It gives the verifier the evidence; it does not make the
+verifier use it. A verifier model can still misjudge, which is why the trajectory, not
+the verdict, is checked after every live run.
+
+**Comparability.** Earlier runs rendered the count only. No earlier goal concerned
+research, so no earlier verdict could have depended on the difference.

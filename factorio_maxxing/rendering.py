@@ -15,6 +15,8 @@ EMPTY = "(none)"
 MAX_ENTITIES = 32
 """Entity lines rendered before truncation. A large base would otherwise dominate the
 policy's context; the remainder is summarised as a count."""
+MAX_TECHNOLOGIES = 32
+"""Researched technology names rendered before truncation, for the same reason."""
 
 
 def render_observation(obs: dict[str, Any], *, max_entities: int = MAX_ENTITIES) -> str:
@@ -171,13 +173,35 @@ def _render_entities(entities: Any, max_entities: int) -> list[str]:
     return lines
 
 
-def _technology_states(technologies: Any) -> list[Any]:
-    """FLE's dataclass types this as a dict; its gym observation delivers a list."""
+def _technology_states(technologies: Any) -> list[tuple[str, Any]]:
+    """(name, state) pairs. FLE's dataclass types this as a dict keyed by name; its
+    gym observation delivers a list of records that carry the name themselves."""
     if isinstance(technologies, dict):
-        return list(technologies.values())
+        return [(str(name), state) for name, state in technologies.items()]
     if isinstance(technologies, list):
-        return technologies
+        return [
+            (str(state.get("name", "?")) if isinstance(state, dict) else "?", state)
+            for state in technologies
+        ]
     return []
+
+
+def _researched_names(states: list[tuple[str, Any]]) -> str:
+    """The researched technologies by name, truncated like the entity list.
+
+    A count alone cannot tell a verifier whether *the* technology a goal names is
+    researched - measured live, a verifier declared "Research automation" done with
+    automation unresearched (D49)."""
+    names = [
+        name
+        for name, state in states
+        if isinstance(state, dict) and state.get("researched")
+    ]
+    if not names:
+        return "none"
+    shown = ", ".join(names[:MAX_TECHNOLOGIES])
+    hidden = len(names) - MAX_TECHNOLOGIES
+    return f"{shown}, ... and {hidden} more" if hidden > 0 else shown
 
 
 def _render_research(research: Any) -> list[str]:
@@ -208,9 +232,11 @@ def _render_research(research: Any) -> list[str]:
     states = _technology_states(research.get("technologies"))
     if states:
         done = sum(
-            1 for state in states if isinstance(state, dict) and state.get("researched")
+            1
+            for _, state in states
+            if isinstance(state, dict) and state.get("researched")
         )
-        lines.append(f"researched: {done}/{len(states)}")
+        lines.append(f"researched: {done}/{len(states)} ({_researched_names(states)})")
     return lines
 
 
