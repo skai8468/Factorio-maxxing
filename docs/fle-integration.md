@@ -804,9 +804,12 @@ as the first section of the policy prompt instead of a system message (D28), but
 content is the same, which is what keeps the comparison honest (D1).
 
 *Note:* `grep cache_control` across FLE returns nothing - **the baseline requests no
-prompt caching**. Our `llm.py` records `cache_read_tokens` / `cache_write_tokens` but
-does not set `cache_control` either, so today this is ~29k billed input tokens per
-policy step. Enabling caching is an open item, not a decided one.
+prompt caching**. Ours does since D51: Claude models go through Anthropic's Messages API
+with the reference marked `cache_control: ephemeral`, which the OpenAI-compatible
+endpoint cannot do. Measured live on Haiku 4.5 (2026-10-08), the rendered reference is
+**36,598 tokens**; the first call writes it to the cache and the next reads it, leaving
+117 tokens of a fresh step's 36,715 billed at the full input rate. The text the model
+reads is unchanged, so the comparison with the baseline stays honest (D1).
 
 **Still unconfirmed:** that supplying this actually stops the model inventing calls. That
 needs a live run (item 18), and until then the fix is reasoned, not demonstrated.

@@ -1,4 +1,4 @@
-"""Tests for the generic OpenAI-compatible client.
+"""Tests for the generic API client, over both wire protocols (D26, D51).
 
 Build-plan section 19 item 15. Every case here is offline: the transport is injected,
 so no request leaves the machine and no key is needed.
@@ -12,6 +12,7 @@ from factorio_maxxing.llm import (
     PROVIDERS,
     APIClient,
     LLMClient,
+    Prompt,
     auth_headers,
     resolve_provider,
 )
@@ -53,8 +54,49 @@ def completion(
     )
 
 
-def client(model="claude-haiku-4-5", response=None, **kwargs):
+def client(model="gpt-4o", response=None, **kwargs):
+    """An OpenAI-protocol client. Claude models speak the Messages API (D51)."""
     fake = FakeOpenAI(response if response is not None else completion())
+    return APIClient(model, client=fake, **kwargs), fake
+
+
+class FakeMessages:
+    def __init__(self, response):
+        self.response = response
+        self.requests: list[dict] = []
+
+    def create(self, **request):
+        self.requests.append(request)
+        return self.response
+
+
+class FakeAnthropic:
+    """Stands in for anthropic.Anthropic: only .messages.create is used."""
+
+    def __init__(self, response):
+        self.messages = FakeMessages(response)
+
+
+def message(
+    text="```python\nx = 1\n```",
+    input_tokens=1200,
+    output_tokens=88,
+    cache_read=34000,
+    cache_write=0,
+):
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="text", text=text)],
+        usage=SimpleNamespace(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cache_read_input_tokens=cache_read,
+            cache_creation_input_tokens=cache_write,
+        ),
+    )
+
+
+def claude(model="claude-haiku-4-5", response=None, **kwargs):
+    fake = FakeAnthropic(response if response is not None else message())
     return APIClient(model, client=fake, **kwargs), fake
 
 
@@ -229,9 +271,98 @@ def test_a_key_from_the_environment_is_used(monkeypatch):
 
 
 def test_no_request_is_made_when_the_client_is_constructed():
-    api, fake = client()
-    assert fake.completions.requests == []
+    api, fake = claude()
+    assert fake.messages.requests == []
     assert api.provider is PROVIDERS["claude"]
+
+
+def test_claude_speaks_the_messages_api_and_everything_else_openai():
+    """The protocol is a field of the routing table, not a branch on a model (D51)."""
+    assert PROVIDERS["claude"].api == "anthropic"
+    assert {p.api for name, p in PROVIDERS.items() if name != "claude"} == {"openai"}
+
+
+def test_a_plain_prompt_is_sent_as_a_single_user_string_to_claude():
+    api, fake = claude()
+    api.generate("build a drill")
+    request = fake.messages.requests[0]
+    assert request["messages"] == [{"role": "user", "content": "build a drill"}]
+    assert request["model"] == "claude-haiku-4-5"
+    assert request["max_tokens"] == 4096
+    assert "temperature" not in request
+
+
+def test_a_prompts_cached_part_is_marked_for_caching():
+    api, fake = claude()
+    api.generate(Prompt(cached="ENVIRONMENT API\n  move_to(...)", rest="GOAL\n  g"))
+    content = fake.messages.requests[0]["messages"][0]["content"]
+    assert content[0] == {
+        "type": "text",
+        "text": "ENVIRONMENT API\n  move_to(...)",
+        "cache_control": {"type": "ephemeral"},
+    }
+    assert "cache_control" not in content[1]
+
+
+def test_cached_blocks_concatenate_to_exactly_what_the_model_would_read():
+    """Caching changes the price of a request, never its text."""
+    prompt = Prompt(cached="ENVIRONMENT API\n  x", rest="GOAL\n  g\n\nINSTRUCTIONS\n  i")
+    api, fake = claude()
+    api.generate(prompt)
+    content = fake.messages.requests[0]["messages"][0]["content"]
+    assert "".join(block["text"] for block in content) == str(prompt)
+
+
+def test_a_prompt_with_nothing_cached_is_sent_as_plain_text():
+    api, fake = claude()
+    api.generate(Prompt(cached="", rest="GOAL\n  g"))
+    assert fake.messages.requests[0]["messages"][0]["content"] == "GOAL\n  g"
+
+
+def test_the_openai_protocol_sends_a_prompt_as_its_joined_text():
+    api, fake = client()
+    prompt = Prompt(cached="ENVIRONMENT API\n  x", rest="GOAL\n  g")
+    api.generate(prompt)
+    assert fake.completions.requests[0]["messages"][0]["content"] == str(prompt)
+
+
+def test_claude_usage_counts_every_input_token_and_the_cached_share_separately():
+    """The Messages API's input_tokens excludes cached tokens; ours never has (D51)."""
+    api, _ = claude(response=message(input_tokens=1200, cache_read=34000, cache_write=0))
+    response = api.generate("p")
+    assert response.input_tokens == 35200
+    assert response.cache_read_tokens == 34000
+    assert response.cache_write_tokens == 0
+    assert response.output_tokens == 88
+
+
+def test_claude_usage_counts_a_cache_write_as_input():
+    api, _ = claude(response=message(input_tokens=1200, cache_read=0, cache_write=34000))
+    response = api.generate("p")
+    assert response.input_tokens == 35200
+    assert response.cache_write_tokens == 34000
+
+
+def test_claude_text_joins_text_blocks_and_skips_the_rest():
+    reply = SimpleNamespace(
+        content=[
+            SimpleNamespace(type="thinking", thinking="hmm"),
+            SimpleNamespace(type="text", text="a"),
+            SimpleNamespace(type="text", text="b"),
+        ],
+        usage=None,
+    )
+    api, _ = claude(response=reply)
+    response = api.generate("p")
+    assert response.text == "ab"
+    assert (response.input_tokens, response.output_tokens) == (0, 0)
+
+
+def test_claude_reports_the_configured_model_and_measures_latency():
+    api, _ = claude("claude-something-not-released-yet")
+    response = api.generate("p")
+    assert response.model == "claude-something-not-released-yet"
+    assert response.latency_seconds >= 0
 
 
 def test_no_workspace_header_without_a_workspace_id():

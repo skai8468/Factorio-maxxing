@@ -6,8 +6,10 @@ The harness contains no provider or model conditionals: a model is a configurati
 string. Usage is stored raw - never a computed dollar cost - so trajectories stay
 re-priceable when pricing changes.
 
-APIClient is a generic OpenAI-compatible client: every provider is a base URL plus
-a key environment variable. Keys come from the environment, never a config file.
+APIClient is a generic client: every provider is a base URL, a key environment
+variable and a wire protocol. Most providers speak the OpenAI-compatible protocol;
+Anthropic's is used where a provider offers it, because only it supports prompt
+caching (D51). Keys come from the environment, never a config file.
 """
 
 import ast
@@ -35,9 +37,25 @@ class LLMResponse:
     latency_seconds: float
 
 
+@dataclass(frozen=True)
+class Prompt:
+    """A prompt with a stable leading part a provider may cache (D51).
+
+    ``str(prompt)`` is the exact text a model reads, so marking a part cacheable never
+    changes what the model sees - only what the request costs. A client that cannot
+    cache sends ``str(prompt)``.
+    """
+
+    cached: str
+    rest: str
+
+    def __str__(self) -> str:
+        return f"{self.cached}\n\n{self.rest}" if self.cached else self.rest
+
+
 @runtime_checkable
 class LLMClient(Protocol):
-    def generate(self, prompt: str) -> LLMResponse: ...
+    def generate(self, prompt: str | Prompt) -> LLMResponse: ...
 
 
 class StubLLMClient:
@@ -73,8 +91,9 @@ class StubLLMClient:
     def call_count(self) -> int:
         return len(self.prompts)
 
-    def generate(self, prompt: str) -> LLMResponse:
+    def generate(self, prompt: str | Prompt) -> LLMResponse:
         text = self._responses[min(self.call_count, len(self._responses) - 1)]
+        prompt = str(prompt)
         self.prompts.append(prompt)
         return LLMResponse(
             text=text,
@@ -139,10 +158,13 @@ class Provider:
     model_prefix: str = ""
     """Stripped from the model string before the request, matching FLE's
     model_transform (open-router-, ollama-)."""
+    api: str = "openai"
+    """The wire protocol: "openai" (chat completions) or "anthropic" (messages).
+    Chosen per provider in this table, so no code branches on a model (D5, D51)."""
 
 
 PROVIDERS: dict[str, Provider] = {
-    "claude": Provider("https://api.anthropic.com/v1", "ANTHROPIC_API_KEY"),
+    "claude": Provider("https://api.anthropic.com", "ANTHROPIC_API_KEY", api="anthropic"),
     "openai": Provider("https://api.openai.com/v1", "OPENAI_API_KEY"),
     "deepseek": Provider("https://api.deepseek.com", "DEEPSEEK_API_KEY"),
     "gemini": Provider(
@@ -197,11 +219,15 @@ def resolve_provider(model: str, provider: str | None = None) -> tuple[Provider,
 
 
 class APIClient:
-    """A generic OpenAI-compatible client.
+    """A generic client over two wire protocols.
 
-    Every provider is a base URL plus a key environment variable, routed through one
-    client; the harness holds no provider or model conditionals (D5). Usage is recorded
-    raw, never as a cost (D9).
+    Every provider is a base URL, a key environment variable and a protocol, routed
+    through one client; the harness holds no provider or model conditionals (D5) - the
+    protocol is a field of the routing table. Usage is recorded raw, never as a cost
+    (D9).
+
+    A ``Prompt``'s cached part is marked for prompt caching on the Anthropic protocol;
+    the OpenAI-compatible protocol cannot cache and sends the joined text (D51).
 
     ``temperature`` is omitted from the request unless set, because some reasoning
     models reject it (see docs/fle-integration.md).
@@ -223,26 +249,43 @@ class APIClient:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.workspace_id = workspace_id or os.environ.get(WORKSPACE_ID_ENV)
-        self._client = client or _openai_client(self.provider, api_key, self.workspace_id)
+        if client is None:
+            build = _anthropic_client if self._anthropic else _openai_client
+            client = build(self.provider, api_key, self.workspace_id)
+        self._client = client
 
-    def generate(self, prompt: str) -> LLMResponse:
+    @property
+    def _anthropic(self) -> bool:
+        return self.provider.api == "anthropic"
+
+    def generate(self, prompt: str | Prompt) -> LLMResponse:
         request: dict[str, Any] = {
             "model": self._sent_model,
-            "messages": [{"role": "user", "content": prompt}],
             "max_tokens": self.max_tokens,
         }
         if self.temperature is not None:
             request["temperature"] = self.temperature
 
         started = time.perf_counter()
-        completion = self._client.chat.completions.create(**request)
+        if self._anthropic:
+            content = _anthropic_content(prompt)
+            request["messages"] = [{"role": "user", "content": content}]
+            reply = self._client.messages.create(**request)
+        else:
+            request["messages"] = [{"role": "user", "content": str(prompt)}]
+            reply = self._client.chat.completions.create(**request)
         latency = time.perf_counter() - started
 
-        input_tokens, output_tokens, cache_read, cache_write = _read_usage(
-            getattr(completion, "usage", None)
-        )
+        usage = getattr(reply, "usage", None)
+        if self._anthropic:
+            text = _read_anthropic_text(reply)
+            tokens = _read_anthropic_usage(usage)
+        else:
+            text = _read_text(reply)
+            tokens = _read_usage(usage)
+        input_tokens, output_tokens, cache_read, cache_write = tokens
         return LLMResponse(
-            text=_read_text(completion),
+            text=text,
             model=self.model,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
@@ -250,6 +293,20 @@ class APIClient:
             cache_write_tokens=cache_write,
             latency_seconds=latency,
         )
+
+
+def _anthropic_content(prompt: str | Prompt) -> str | list[dict[str, Any]]:
+    """The user message content, with the cached part as its own marked block.
+
+    The two blocks concatenate to ``str(prompt)`` exactly - the separator travels at the
+    start of the second block - so the model reads what it would read uncached.
+    """
+    if not isinstance(prompt, Prompt) or not prompt.cached:
+        return str(prompt)
+    return [
+        {"type": "text", "text": prompt.cached, "cache_control": {"type": "ephemeral"}},
+        {"type": "text", "text": f"\n\n{prompt.rest}"},
+    ]
 
 
 def auth_headers(workspace_id: str | None = None) -> dict[str, str]:
@@ -283,6 +340,59 @@ def _openai_client(
         base_url=provider.base_url,
         api_key=key,
         default_headers=auth_headers(workspace_id) or None,
+    )
+
+
+def _anthropic_client(
+    provider: Provider, api_key: str | None, workspace_id: str | None = None
+) -> Any:
+    key = api_key or os.environ.get(provider.api_key_env)
+    if not key:
+        raise ValueError(
+            f"no API key: set {provider.api_key_env} in the environment "
+            "(keys are never read from a config file)"
+        )
+    try:
+        from anthropic import Anthropic
+    except ImportError as error:  # pragma: no cover - depends on the install
+        raise ValueError(
+            "the anthropic package is required for live Claude calls; "
+            'install it with pip install -e ".[api]"'
+        ) from error
+    return Anthropic(
+        base_url=provider.base_url,
+        api_key=key,
+        default_headers=auth_headers(workspace_id) or None,
+    )
+
+
+def _read_anthropic_text(message: Any) -> str:
+    blocks = getattr(message, "content", None) or []
+    return "".join(
+        getattr(block, "text", "") or ""
+        for block in blocks
+        if getattr(block, "type", None) == "text"
+    )
+
+
+def _read_anthropic_usage(usage: Any) -> tuple[int, int, int, int]:
+    """Read Messages API usage, with ``input_tokens`` meaning *all* input.
+
+    The Messages API's own ``input_tokens`` excludes cached tokens. The harness's field
+    has always meant every input token the model processed - the OpenAI-compatible
+    ``prompt_tokens`` - so the cached tokens are added back here, keeping runs before
+    and after caching comparable. The uncached share is ``input - read - write`` (D51).
+    """
+    if usage is None:
+        return 0, 0, 0, 0
+    cache_read = _as_int(getattr(usage, "cache_read_input_tokens", 0))
+    cache_write = _as_int(getattr(usage, "cache_creation_input_tokens", 0))
+    uncached = _as_int(getattr(usage, "input_tokens", 0))
+    return (
+        uncached + cache_read + cache_write,
+        _as_int(getattr(usage, "output_tokens", 0)),
+        cache_read,
+        cache_write,
     )
 
 

@@ -11,7 +11,7 @@ import pytest
 from factorio_maxxing.envs import MockFactorioEnv, MockFrame
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.human import Hint, NoHuman, ScriptedHuman
-from factorio_maxxing.llm import StubLLMClient
+from factorio_maxxing.llm import Prompt, StubLLMClient
 from factorio_maxxing.loop import execution_errors, run_goal
 from factorio_maxxing.stuck import ConsecutiveNonDoneDetector, default_detector
 from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
@@ -399,3 +399,23 @@ def test_no_api_section_when_none_is_configured(recorder):
     client = StubLLMClient([POLICY])
     run(recorder, client=client)
     assert all("ENVIRONMENT API" not in prompt for prompt in client.prompts)
+
+
+class PromptRecordingClient(StubLLMClient):
+    """Keeps the prompt object as passed, before the stub flattens it to text."""
+
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.raw_prompts = []
+
+    def generate(self, prompt):
+        self.raw_prompts.append(prompt)
+        return super().generate(prompt)
+
+
+def test_the_policy_receives_the_api_reference_as_a_cacheable_prefix(recorder):
+    """D51: the loop hands the client a Prompt, so a caching provider can cache it."""
+    client = PromptRecordingClient([POLICY])
+    run(recorder, client=client, api_reference="place_entity(name)")
+    assert all(isinstance(p, Prompt) for p in client.raw_prompts)
+    assert all(p.cached.startswith("ENVIRONMENT API") for p in client.raw_prompts)

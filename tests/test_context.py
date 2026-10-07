@@ -5,7 +5,7 @@ history, guidance and errors, and respects the window. The guidance cases also p
 decisions.md D12: guidance accumulates and earlier hints survive later ones.
 """
 
-from factorio_maxxing.context import HISTORY_WINDOW, build
+from factorio_maxxing.context import HISTORY_WINDOW, build, build_prompt
 from factorio_maxxing.goal import Goal
 
 GOAL = Goal(description="Build a working iron mining setup", max_steps=8)
@@ -183,3 +183,24 @@ def test_the_api_reference_comes_first():
         "CURRENT OBSERVATION",
         "INSTRUCTIONS",
     ]
+
+
+def test_build_prompt_marks_only_the_api_reference_as_cached():
+    """D51: the reference is the stable prefix; everything after it changes per step."""
+    prompt = build_prompt(GOAL, OBSERVATION, api_reference="place_entity(name)")
+    assert headers(prompt.cached) == ["ENVIRONMENT API"]
+    assert headers(prompt.rest)[0] == "GOAL"
+
+
+def test_build_prompt_reads_exactly_as_build():
+    """Caching must never change what the model reads."""
+    args = (GOAL, OBSERVATION, [("x = 1", "obs")], ["fuel it"], ["NameError: y"])
+    reference = "place_entity(name)"
+    assert str(build_prompt(*args, api_reference=reference)) == build(
+        *args, api_reference=reference
+    )
+    assert str(build_prompt(*args)) == build(*args)
+
+
+def test_without_a_reference_nothing_is_cached():
+    assert build_prompt(GOAL, OBSERVATION).cached == ""

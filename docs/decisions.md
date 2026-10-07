@@ -1596,3 +1596,47 @@ neither result depends on the change. Any result from a long goal must report bo
 thresholds and the cap beside the model and the goal, as D40 asks of the starting
 inventory. The trajectory does not yet record the run's config, so for now that means
 keeping the config file and command line with the result.
+
+---
+
+## D51 - Claude calls use the Messages API, so the API reference is cached
+
+**Decision (research lead).** The routing table gains a wire protocol per provider.
+`claude` speaks Anthropic's Messages API through the `anthropic` SDK; every other
+provider keeps the OpenAI-compatible protocol. The policy prompt becomes a `Prompt` with a
+cached part - the API reference - which the Messages API path marks
+`cache_control: ephemeral`. This supersedes D26's "a single OpenAI-compatible client" for
+Claude only; D26's routing table, lazy import and optional dependency stand, and
+`anthropic` joins `openai` in the `api` extra.
+
+**Why.** Cost. In the goal-5 rehearsal the reference was ~70% of every policy call -
+36,598 of ~37-50k input tokens, resent unchanged on every step - and the bill was
+2.02M input tokens for 42 steps. Cache reads are a tenth of the input price. The
+OpenAI-compatible endpoint the harness used **does not support prompt caching** (stated
+in Anthropic's compatibility documentation), which is why every call recorded
+`cache_read=0`. Only the native API can cache.
+
+**Why it cannot change a result.** `str(prompt)` is the exact text built before - the two
+content blocks concatenate to it byte for byte, with the separator at the start of the
+second block - so the model reads what it read before; tests assert this. The model,
+`max_tokens` and the omitted `temperature` are unchanged. D5 holds: the protocol is a
+field of the routing table, so nothing branches on a model, and the policy stays free of
+model-specific logic. Only the API reference is cached: it is the one block identical on
+every step, and the history after it slides once the window fills.
+
+**Usage semantics are kept, not adopted.** The Messages API's own `input_tokens` excludes
+cached tokens. The harness's `input_tokens` has always meant every input token processed
+(the OpenAI-compatible `prompt_tokens`), so the client adds the cached tokens back: runs
+before and after this change stay comparable, and the uncached share is
+`input - cache_read - cache_write`. Raw counts only, as D9 requires.
+
+**Measured live (2026-10-08, Haiku 4.5).** Two calls with the full reference: the first
+`input=36715 cache_write=36598`, the second `input=36715 cache_read=36598`. Priced on the
+goal-5 rehearsal's own token counts, the same 42 steps would bill roughly 0.7M
+input-equivalent tokens instead of 2.02M - about 60% less.
+
+**What it costs.** A cache entry lives five minutes, refreshed on every read. A step that
+starts more than five minutes after the last - a long human answer, a slow world - pays
+one cache write (1.25x on the reference) again. The verifier prompt is not cached: it is
+under Haiku 4.5's 4,096-token caching minimum. A provider other than Claude still pays
+full price for the reference.

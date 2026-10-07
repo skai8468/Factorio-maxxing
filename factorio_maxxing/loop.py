@@ -111,7 +111,7 @@ def run_goal(
         )
 
     for step in range(goal.max_steps):
-        prompt = context.build(
+        prompt = context.build_prompt(
             goal,
             rendered,
             history,

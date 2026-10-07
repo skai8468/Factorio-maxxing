@@ -11,6 +11,7 @@ component later experiments vary most, which is why it is not inside loop.py.
 from collections.abc import Sequence
 
 from factorio_maxxing.goal import Goal
+from factorio_maxxing.llm import Prompt
 
 HISTORY_WINDOW = 16
 """Steps of history shown to the policy. Matches FLE's RecursiveReportFormatter
@@ -23,7 +24,7 @@ Keep the code under 50 lines, and prefer a small verifiable step over a long scr
 Do not repeat steps that have already succeeded."""
 
 
-def build(
+def build_prompt(
     goal: Goal,
     rendered_observation: str,
     history: Sequence[tuple[str, str]] = (),
@@ -32,7 +33,7 @@ def build(
     *,
     api_reference: str = "",
     history_length: int = HISTORY_WINDOW,
-) -> str:
+) -> Prompt:
     """Assemble the policy prompt.
 
     ``history`` is a sequence of ``(policy, rendered_observation)`` pairs in step order;
@@ -47,12 +48,13 @@ def build(
     ``api_reference`` describes the functions the environment actually provides. Without
     it a policy model invents a plausible API and every call fails; it is passed in
     rather than hard-coded because the authority on that surface is the environment,
-    not this module. It renders first, being the most stable content across a goal.
+    not this module. It renders first, being the most stable content across a goal,
+    and is returned as the prompt's cached part so a provider can cache it (D51).
     """
-    blocks = []
+    cached = ""
     if api_reference.strip():
-        blocks.append(_section("ENVIRONMENT API", api_reference.splitlines()))
-    blocks.append(_goal_block(goal))
+        cached = _section("ENVIRONMENT API", api_reference.splitlines())
+    blocks = [_goal_block(goal)]
 
     if history:
         blocks.append(_history_block(history, history_length))
@@ -65,7 +67,31 @@ def build(
         blocks.append(_guidance_block(guidance))
 
     blocks.append(_section("INSTRUCTIONS", POLICY_INSTRUCTIONS.splitlines()))
-    return "\n\n".join(blocks)
+    return Prompt(cached=cached, rest="\n\n".join(blocks))
+
+
+def build(
+    goal: Goal,
+    rendered_observation: str,
+    history: Sequence[tuple[str, str]] = (),
+    guidance: Sequence[str] = (),
+    errors: Sequence[str] = (),
+    *,
+    api_reference: str = "",
+    history_length: int = HISTORY_WINDOW,
+) -> str:
+    """The policy prompt as the exact text the model reads: ``str(build_prompt(...))``."""
+    return str(
+        build_prompt(
+            goal,
+            rendered_observation,
+            history,
+            guidance,
+            errors,
+            api_reference=api_reference,
+            history_length=history_length,
+        )
+    )
 
 
 def _section(header: str, lines: Sequence[str]) -> str:

@@ -65,11 +65,21 @@ class LLMResponse:
     cache_write_tokens: int
     latency_seconds: float
 
+@dataclass(frozen=True)
+class Prompt:
+    cached: str   # stable leading part a provider may cache
+    rest: str     # str(prompt) == f"{cached}\n\n{rest}" (or rest alone)
+
 class LLMClient(Protocol):
-    def generate(self, prompt: str) -> LLMResponse: ...
+    def generate(self, prompt: str | Prompt) -> LLMResponse: ...
 ```
 
-Raw usage only — no computed cost (see `decisions.md` D9).
+Raw usage only — no computed cost (see `decisions.md` D9). `input_tokens` counts **every**
+input token the model processed, cached or not; `cache_read_tokens` and
+`cache_write_tokens` are shares of it, so the uncached share is
+`input_tokens - cache_read_tokens - cache_write_tokens`. The policy prompt marks the API
+reference as its cached part; a client that cannot cache sends `str(prompt)`, the exact
+same text (`decisions.md` D51).
 Policy extraction handles fenced ```python blocks, bare Python, and malformed
 responses.
 
@@ -152,9 +162,10 @@ JSONL, append-friendly. Four record types. Every record carries `type`, `run_id`
 ```
 
 All model usage - policy, verifier, and every future LLM caller - is recorded as
-`llm_call` records distinguished by `role`. Cost analysis is therefore permanently
+`llm_call` records distinguished by `role`. Token analysis is therefore permanently
 `sum(r["input_tokens"] for r in records if r["type"] == "llm_call")`, and no schema
-widening is needed when a new caller arrives (see `decisions.md` D22).
+widening is needed when a new caller arrives (see `decisions.md` D22). Pricing a run
+prices the uncached, cache-read and cache-write shares separately (D51).
 
 Required consequences:
 
