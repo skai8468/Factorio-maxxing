@@ -1,0 +1,14 @@
+[
+  {
+    "text": "You do not have a lab. place_entity fails because no lab is in your inventory, not because the inventory is full - never discard items. Craft one first with craft_item(Prototype.Lab). A lab needs 10 electronic circuits (each 1 iron plate + 3 copper cable), 10 iron gear wheels and 4 transport belts, so you need about 40 iron plates and 15 copper plates. Then place the lab near you, insert the automation science packs, and power it: offshore pump on water, then a boiler fuelled with coal, then a steam engine, then small electric poles to the lab.",
+    "original_step": 9
+  },
+  {
+    "text": "Solar panels are not available - the lab must be powered by steam. The steam power recipes (pipe, offshore pump, boiler, steam engine) unlock only after 50 iron plates have been smelted in total; you are close, so smelt more iron ore in a furnace until steam-power appears in the researched list. Then craft an offshore pump, a boiler, a steam engine and small electric poles. Find water with nearest(Resource.Water), place the offshore pump at the water's edge, the boiler next to it fuelled with coal, the steam engine connected to the boiler, and small electric poles from the steam engine to the lab.",
+    "original_step": 19
+  },
+  {
+    "text": "Build the power chain in the order the API reference shows, one entity at a time, and pick up stray pipes that are not part of it first - leftover pipes block connection points. 1) Place the offshore pump on water. 2) Place the boiler at least 4 tiles from the pump using nearest_buildable with BuildingBox(width=Prototype.Boiler.WIDTH + 4, height=Prototype.Boiler.HEIGHT + 4), fuel it with coal, then connect_entities(offshore_pump, boiler, Prototype.Pipe). 3) Place the steam engine the same way near the boiler, then connect_entities(boiler, steam_engine, Prototype.Pipe). If that connection fails, pick up the steam engine and place it on the opposite side of the boiler rather than adding more pipes. 4) Finally connect_entities(steam_engine, lab, Prototype.SmallElectricPole).",
+    "original_step": 65
+  }
+]
