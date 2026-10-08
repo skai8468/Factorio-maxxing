@@ -174,11 +174,17 @@ Confirm the outcome in `docker logs`, which prints `[JOIN] <name> joined the gam
 
 FLE's own Twitch stream is a game client: `fle/overlay.py`, a control panel meant to sit
 beside the client window, teleports player 1 to the agent over RCON every three seconds.
-`factorio_maxxing.watch` does better than a teleport loop, which jumps. It puts each
-player in god mode (no character for FLE's reset to destroy), then in remote view
-centred on the agent - the game's own follow camera, which tracks every frame - and in
-a `watchers` permission group that allows no input action, so the watcher can look but
-never act (D47).
+`factorio_maxxing.watch` does the same ten times a second (D59). It puts each player
+in god mode before any run (no character for FLE's reset to destroy), teleports them
+onto the agent every check, and keeps them in a `watchers` permission group that allows
+no input action, so the watcher can look but never act (D47). D47's remote view centred
+on the agent tracked more smoothly but showed only the map: remote view renders live
+graphics only where the force has vision, and FLE's agent gives none.
+
+On start it also **generates the map around spawn** (radius 25 chunks) while nobody is
+connected. FLE forces that same generation when a run starts, which stops the server for
+~10 s on a fresh map - long enough to drop a lagging client, whose reconnect then
+crashes the server (D43, D59). It is skipped if a client is already connected.
 
 **The one rule: the client joins before any run, and never leaves.** A join forces a
 map save, and every save fails once FLE has loaded its tools into `storage` (D43). A
@@ -201,9 +207,10 @@ terminal is the one that holds WSL up.
    source .env.local && ~/venvs/fle/bin/python -m factorio_maxxing.watch
    ```
 
-   It logs only when its state changes: *waiting for a Factorio client to connect*,
-   then *waiting for a run to create the agent's character*, then *following the
-   agent* once a run has reset. Ctrl+C stops it re-attaching the camera; the lock-out
+   It logs *generating the map around spawn*, then only state changes: *waiting for a
+   Factorio client to connect*, then *waiting for a run to create the agent's
+   character*, then *following the agent* once a run has reset. Wait for *map
+   generation generated* before joining. Ctrl+C stops it following; the lock-out
    stays until the cluster restarts.
 
 2. **Join** from Factorio 2.0.77: *Multiplayer -> Connect to address ->

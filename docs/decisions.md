@@ -1901,3 +1901,38 @@ failed attempts on 2026-10-09:
 tool uses that period - so a fast run loses nothing by unregistering it. A recovered
 walk ends where fast mode would have put the agent. `step_timeout` changes how long a
 step may take, not what it does; measured runs at 10x keep FLE's 120.
+
+---
+
+## D59 - The camera generates the map first, and follows in god mode
+
+**Decision (research lead).** `factorio_maxxing.watch` changes in two ways:
+
+- **It generates the start area before anyone joins** - the radius-25-chunk generation
+  FLE forces at the start of every run - unless a client is already connected.
+  `--no-pregenerate` turns it off.
+- **It follows by teleporting god-mode watchers onto the agent ten times a second**,
+  instead of D47's remote view centred on the agent. Watchers are put in god mode and the
+  input-less `watchers` group on every check, before any agent exists.
+
+**Findings, measured 2026-10-09 (Demo 1).**
+
+1. *The first recording attempt lost its client* about a second after the run started.
+   Timed on a fresh server, FLE's `_generate_chunks(radius=25)` stopped the server for
+   **10.4 s** (409 -> 3,256 chunks); repeated, 0.01 s. The client, already lagging
+   (latency 2 -> 10 ticks), dropped; its reconnect forced a map save, which failed on
+   FLE's tools in `storage` (D43), and the server quit.
+2. *Remote view showed the map, not the game.* Chunks generated in advance are not
+   charted, so remote view showed black; charted, it showed the low-resolution map,
+   with live graphics only in a strip. Remote view renders live only where the force has
+   vision - radar, or a character a player controls - and FLE's agent belongs to no
+   player. A god-mode player renders the real world wherever it stands; switched live,
+   the watcher saw the game.
+
+**What it costs.** A teleport is a step, not a glide: at walking speed a tenth of a second
+is under a tile, so the view moves in small steps rather than tracking every frame as
+D47's did. In fast mode the agent itself teleports, and the view jumps with it.
+
+**What it does not change.** As D45 and D47: nothing is written to `storage`, no entity
+but the watching player moves, and no FLE tool reads a connected player. D47's
+lock-out is kept unchanged.

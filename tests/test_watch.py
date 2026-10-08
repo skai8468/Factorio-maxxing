@@ -1,4 +1,4 @@
-"""Tests for the live-watching camera (decisions.md D45, D47).
+"""Tests for the live-watching camera (decisions.md D45, D47, D59).
 
 The Lua itself was exercised against a live cluster; these pin the Python around it:
 what is sent, when it logs, and that a failure never stops the camera.
@@ -39,13 +39,58 @@ def test_follow_lua_is_a_single_line():
     assert "\n" not in FOLLOW_LUA
 
 
-def test_follow_lua_uses_the_games_own_follow_camera():
-    """D47: centred remote view tracks every frame; a teleport loop only jumps."""
+def test_follow_lua_stands_god_mode_watchers_on_the_agent():
+    """D59: remote view needs vision the agent does not give; god mode sees the world."""
     assert "storage.agent_characters[1]" in FOLLOW_LUA
     assert "game.connected_players" in FOLLOW_LUA
-    assert "defines.controllers.remote" in FOLLOW_LUA
-    assert "p.centered_on = c" in FOLLOW_LUA
-    assert "teleport" not in FOLLOW_LUA
+    assert "p.teleport(c.position, c.surface)" in FOLLOW_LUA
+    assert "defines.controllers.remote" not in FOLLOW_LUA
+    assert "centered_on" not in FOLLOW_LUA
+
+
+def test_watchers_are_in_god_mode_before_any_agent_exists():
+    """No character for FLE's reset to destroy - losing one dropped a client (D38)."""
+    assert FOLLOW_LUA.index("defines.controllers.god") < FOLLOW_LUA.index('"no agent"')
+
+
+def test_the_camera_updates_ten_times_a_second():
+    assert watch.DEFAULT_INTERVAL == 0.1
+
+
+def test_pregenerate_generates_the_start_area_when_nobody_is_connected():
+    rcon = FakeRCON(["0", ""])
+    assert watch.pregenerate(rcon) == "generated"
+    assert rcon.sent[1] == watch.PREGENERATE_LUA
+    assert "request_to_generate_chunks({x = 0, y = 0}, 25)" in watch.PREGENERATE_LUA
+    assert "force_generate_chunk_requests()" in watch.PREGENERATE_LUA
+
+
+def test_pregenerate_is_skipped_with_a_client_connected():
+    """A connected client would sit through the stall it exists to avoid."""
+    rcon = FakeRCON(["1"])
+    assert watch.pregenerate(rcon) == "skipped"
+    assert len(rcon.sent) == 1
+
+
+def test_main_generates_the_map_before_following(monkeypatch):
+    order = []
+    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
+    monkeypatch.setattr(
+        watch, "pregenerate", lambda send: order.append("map") or "generated"
+    )
+    monkeypatch.setattr(watch, "watch", lambda send, interval: order.append("follow"))
+    assert watch.main([]) == 0
+    assert order == ["map", "follow"]
+
+
+def test_main_can_skip_map_generation(monkeypatch):
+    def refuse(send):
+        raise AssertionError("must not generate")
+
+    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
+    monkeypatch.setattr(watch, "pregenerate", refuse)
+    monkeypatch.setattr(watch, "watch", lambda send, interval: None)
+    assert watch.main(["--no-pregenerate"]) == 0
 
 
 def test_follow_lua_keeps_watchers_out_of_the_game():
@@ -132,7 +177,7 @@ def test_main_reports_a_missing_cluster(monkeypatch, capsys):
 
 
 def test_main_stops_cleanly_on_interrupt(monkeypatch):
-    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
+    monkeypatch.setattr(watch, "connect", lambda: FakeRCON(["0", ""]))
 
     def interrupted(send, interval):
         raise KeyboardInterrupt
