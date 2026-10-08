@@ -408,6 +408,8 @@ def test_live_measured_config_separates_the_thresholds():
     """The long-goal settings of D50; every key must be one the harness understands."""
     config = Config(**load_config("configs/live-measured.json"))
     assert config.environment == "live"
+    assert config.policy_model == "claude-haiku-4-5"
+    assert config.verifier_model == "claude-sonnet-5-5"
     assert config.pause_after_action is True
     assert config.fast_mode is True
     assert config.stuck_threshold == 3

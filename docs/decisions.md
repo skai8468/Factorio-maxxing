@@ -1640,3 +1640,58 @@ starts more than five minutes after the last - a long human answer, a slow world
 one cache write (1.25x on the reference) again. The verifier prompt is not cached: it is
 under Haiku 4.5's 4,096-token caching minimum. A provider other than Claude still pays
 full price for the reference.
+
+---
+
+## D52 - The measured verifier is Sonnet 5.5; the policy stays Haiku 4.5
+
+**Decision (research lead).** `configs/live-measured.json` sets `verifier_model` to
+`claude-sonnet-5-5`. `policy_model` stays `claude-haiku-4-5`. Nothing in code changes:
+policy and verifier models are independently configurable by design (CLAUDE.md).
+
+**Finding, measured 2026-10-08.** The second goal-5 rehearsal (`20261008T172157-c51f0c02`,
+24 steps) ended in a second false DONE. The recorded state has `automation` unresearched,
+`current_research: automation` at progress 0, and no lab or power ever built. This time
+the verifier had D49's evidence in front of it -
+
+```
+RESEARCH
+  current: automation
+  progress: 0
+  researched: 2/196 (automation-science-pack, steam-power)
+```
+
+- and still wrote that automation "has been successfully researched (researched: 2/196
+includes automation-science-pack ...)". Rendering cannot fix a verifier that misreads
+what it is given, which D49 anticipated.
+
+**Replay.** The recorded observations of steps 22 and 23 were replayed through the
+verifier, three trials per step per model:
+
+| Verifier | Verdicts | Reasoning |
+|---|---|---|
+| Haiku 4.5 | 6/6 NOT DONE | Wrong: "2/196 researched, so the tree is far from complete" |
+| Sonnet 5.5 | 6/6 NOT DONE | Right: "current: automation, progress 0; the researched list has only automation-science-pack and steam-power" |
+
+Haiku's verdict varied from the live call, and its correct verdicts rested on reasoning
+that predicts a false NOT DONE once automation *is* researched (3/196 is still "far from
+complete"). The replayed prompts were rebuilt from the recorded JSON and are ~2.3k
+tokens against the live ~1.95k, so the replay is strong evidence, not a byte-identical
+rerun.
+
+**Why the verifier and not the policy.** The verifier is the measuring instrument: an
+unreliable one invalidates every result whatever the policy is. The policy is the
+subject, and which model plays it is the capability-ladder variable (D5) - changing it
+would change what is measured, and break comparability with goals 3 and 4, which were
+run with a Haiku policy. A Sonnet policy remains a candidate comparison, not a fix, and
+would first need a thinking/effort setting: Sonnet 5.5 thinks by default, billed as
+output and counted against `max_tokens`.
+
+**Cost.** The verifier prompt is ~3.3k Sonnet tokens (Sonnet's tokenizer counts the same
+text ~1.4x Haiku's), about $0.007 a step at list price - roughly $1 over 150 steps. It is
+not cached: its content changes every step.
+
+**Comparability.** Goals 3 and 4 were verified by Haiku, and both were confirmed against
+the recorded state (drills and furnace `WORKING`, plates in inventory; copper and gears
+in inventory), so neither result depends on this change. Every live result must name its
+verifier model beside its policy model.
