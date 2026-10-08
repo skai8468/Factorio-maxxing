@@ -232,6 +232,51 @@ spectating player, and nothing FLE does for the agent reads a connected player -
 watched run behaves like an unwatched one with the pause off. It is still a
 demonstration, not a measurement: measured runs keep the pause on (D36).
 
+### Demo 1 - recording a goal-5 run (M1)
+
+The M1 demonstration: one watched run of "Research automation" from a fresh world, with a
+human rescuing the agent in text. `configs/demo-automation.json` is the measured goal-5
+config of rehearsal 4 (`20261008T180209-c4fb9b83`) - Haiku policy, Sonnet verifier (D52),
+peaceful (D53), error threshold 3 and non-DONE 10 with a cap of 8 answers (D50) - plus
+the watching knobs above, `enable_vision` for a backup timelapse, and `max_steps` 250:
+rehearsal 4 needed 87 steps at 10x, and the scripted replay was still short of the goal
+at 150. A test pins the shared settings to `live-measured.json`. It is a demonstration,
+not a measurement (D36, D46, D48).
+
+**Before.**
+- Windows will not sleep for the next few hours (Settings -> Power), and OBS has room
+  to record that long.
+- OBS scene: the **Factorio window and the run's terminal side by side**. Trajectory
+  records carry no timestamps, and the help prompts and typed answers are the point of
+  the demo, so the terminal belongs in the frame rather than in a later edit.
+- The three answers that rescued rehearsal 4 are in `configs/hints/goal5-rehearsal4.json`;
+  keep them open to paste.
+
+**Recording.**
+1. WSL terminal A - restart the cluster and start the camera, as step 1 above. Leave it
+   open: it holds WSL up.
+2. Join from Factorio 2.0.77 (`localhost:34197`) and confirm the `JOIN` in the logs.
+3. Start the OBS recording.
+4. WSL terminal B - start the run:
+
+   ```bash
+   source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/demo-automation.json --goal 'Research automation'
+   ```
+
+5. At each help prompt, answer only when the situation matches one of the three
+   answers, and press Enter on a blank line otherwise:
+   - no lab in the inventory, or "Could not place lab" read as a full inventory -> the lab answer;
+   - lab placed with `NO_POWER`, and `steam-power` missing from the researched list -> the steam answer;
+   - boiler, steam engine or pipes failing to connect -> the power-chain answer.
+   Timing matters as much as wording: the scripted replay gave the power-chain answer
+   before any boiler existed and did not reproduce the result.
+6. When the run prints its summary, stop OBS. Then check the trajectory against the
+   recorded state - `automation` researched - not only the verifier's verdict.
+
+**If the client drops,** the session cannot be rejoined (D43): restart the cluster and
+begin again. **The backup** is the renderer timelapse built from the trajectory, as in
+"Building a timelapse of a run" below.
+
 **`fle` writes state into the current working directory** - a `.env` template of `XXX`
 placeholders, and `.fle/data.db` for its SQLite store. Invoked through `wsl.exe`, the
 working directory is inherited from Windows, so running it from the repo drops those

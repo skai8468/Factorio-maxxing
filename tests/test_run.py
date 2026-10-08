@@ -334,6 +334,33 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
     assert Path(config.api_reference).is_file()
 
 
+def test_the_demo_config_is_rehearsal_4_made_watchable():
+    """Demo 1: the measured goal-5 settings (D50, D52, D53) plus the watching knobs."""
+    data = json.loads(Path("configs/demo-automation.json").read_text(encoding="utf-8"))
+    assert set(data) == {field.name for field in fields(Config)}
+
+    demo = Config(**data)
+    measured = Config(**load_config("configs/live-measured.json"))
+    for key in (
+        "policy_model",
+        "verifier_model",
+        "stuck_threshold",
+        "non_done_threshold",
+        "max_interventions_without_progress",
+        "history_length",
+        "starting_inventory",
+        "peaceful",
+        "api_reference",
+    ):
+        assert getattr(demo, key) == getattr(measured, key), key
+    assert demo.pause_after_action is False
+    assert demo.game_speed == 1
+    assert demo.fast_mode is False
+    assert demo.enable_vision is True
+    assert demo.human == "interactive"
+    assert demo.max_steps == 250
+
+
 def test_task_key_defaults_to_open_play():
     assert Config().task_key == "open_play"
     assert resolve_config(parse("--goal", "g")).task_key == "open_play"
