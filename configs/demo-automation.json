@@ -18,7 +18,7 @@
   "enable_vision": true,
   "pause_after_action": false,
   "game_speed": 1,
-  "fast_mode": false,
+  "fast_mode": true,
   "peaceful": true,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"

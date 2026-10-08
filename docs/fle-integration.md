@@ -239,10 +239,19 @@ human rescuing the agent in text. `configs/demo-automation.json` is the measured
 config of rehearsal 4 (`20261008T180209-c4fb9b83`) - Haiku policy, Sonnet verifier (D52),
 both reached through OpenRouter on `OPEN_ROUTER_API_KEY` (D54),
 peaceful (D53), error threshold 3 and non-DONE 10 with a cap of 8 answers (D50) - plus
-the watching knobs above, `enable_vision` for a backup timelapse, and `max_steps` 250:
+the watching knobs above except slow mode, `enable_vision` for a backup timelapse, and
+`max_steps` 250:
 rehearsal 4 needed 87 steps at 10x, and the scripted replay was still short of the goal
 at 150. A test pins the shared settings to `live-measured.json`. It is a demonstration,
-not a measurement (D36, D46, D48).
+not a measurement (D36, D46).
+
+**Fast mode, not slow (first attempt, 2026-10-09).** With `fast_mode: false` the agent
+walked into a big rock and stuck there, still "walking" with 85 path points queued. The
+step outlived FLE's 120 s evaluation timeout, which cannot stop a running step, so the
+slow-mode walk-wait kept polling the server while the next step started on the same
+RCON client - `factorio_rcon.ClientBusy` - and the run crashed at step 4. Fast mode
+teleports along the path, cannot collide, and has no walk-wait: it is how rehearsal 4
+ran. Slow mode stays available, but needs stuck-walk handling before a long run.
 
 **Before.**
 - Windows will not sleep for the next few hours (Settings -> Power), and OBS has room

@@ -361,7 +361,9 @@ def test_the_demo_config_is_rehearsal_4_made_watchable():
         assert getattr(demo, key) == getattr(measured, key), key
     assert demo.pause_after_action is False
     assert demo.game_speed == 1
-    assert demo.fast_mode is False
+    # Fast mode, as rehearsal 4 ran: slow walking got stuck on a rock and outlived
+    # FLE's step timeout, crashing the first recording attempt.
+    assert demo.fast_mode is True
     assert demo.enable_vision is True
     assert demo.human == "interactive"
     assert demo.max_steps == 250
