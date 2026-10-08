@@ -597,3 +597,30 @@ def test_a_missing_api_reference_file_exits_cleanly(tmp_path, capsys):
     )
     assert exit_code == 2
     assert "error:" in capsys.readouterr().err
+
+
+def test_a_run_prints_its_usage_and_stores_no_cost(tmp_path, capsys):
+    """D55: the estimate is printed; the trajectory keeps raw counts only (D9)."""
+    code = main(
+        [
+            "--goal",
+            "Build a working iron mining setup",
+            "--mock",
+            "--policy-model",
+            "stub",
+            "--verifier-model",
+            "stub",
+            "--human",
+            "none",
+            "--trajectory-dir",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    output = capsys.readouterr().out
+    assert "usage:" in output
+    assert "policy" in output
+    (trajectory,) = tmp_path.glob("*.jsonl")
+    text = trajectory.read_text(encoding="utf-8")
+    assert "$" not in text
+    assert '"cost"' not in text

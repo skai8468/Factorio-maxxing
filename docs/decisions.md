@@ -1773,3 +1773,35 @@ second `input=36715 cache_write=0 cache_read=36598` - the same figures as the di
 Messages API route (D51), so the request shape and both usage fields are confirmed.
 Models that think by default, such as Sonnet 5.5, may spend output tokens on reasoning
 within `max_tokens` on this route too; measure one step before a long run.
+
+---
+
+## D55 - Every run prints its estimated cost; no trajectory stores one
+
+**Decision (research lead).** When a run ends - or is interrupted mid-step with Ctrl+C -
+`run.py` prints its token usage per role and an estimated dollar cost, after the goal
+summary. `factorio_maxxing/pricing.py` holds the single pricing table (list prices per
+million tokens for input, output, cache read and five-minute cache write, dated by
+`PRICES_AS_OF`) and also prices any recorded run:
+`python -m factorio_maxxing.pricing trajectories/<run>.jsonl`.
+
+**Why it does not break D9.** D9 forbids dollar figures in trajectories, so that runs
+stay re-priceable; build-plan section 8 asks for cost "derived at analysis time from a
+single pricing table". That is exactly this: the summary reads the finished
+trajectory's raw counts back and prices them, and nothing is written. A test asserts a
+run's trajectory carries no `$` and no `cost` field.
+
+**How a call is priced.** `input_tokens` counts all input (D51), so a call costs
+`(input - cache_read - cache_write) * input_price + cache_read * read_price +
+cache_write * write_price + output * output_price`. Direct and OpenRouter names of one
+model share a price (`open-router-anthropic/claude-haiku-4.5` is `claude-haiku-4-5`);
+OpenRouter lists the same per-token prices (D54), and its own fees are not modelled. A
+model missing from the table - the offline `stub`, any non-Claude model - is named as
+unpriced and the total marked "priced calls only", rather than guessed.
+
+**Checked against the record.** Applied to earlier runs it reproduces the hand-worked
+figures: goal-5 rehearsal 2 ~$0.43, rehearsal 4 ~$2.12, rehearsal 1 ~$2.14.
+
+**Interrupted runs.** A `KeyboardInterrupt` during a step now prints the usage so far and
+exits 130, instead of a traceback. Ctrl+C at a help prompt is unchanged: `InteractiveHuman`
+treats it as declining (D8).

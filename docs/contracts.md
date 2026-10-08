@@ -165,7 +165,10 @@ All model usage - policy, verifier, and every future LLM caller - is recorded as
 `llm_call` records distinguished by `role`. Token analysis is therefore permanently
 `sum(r["input_tokens"] for r in records if r["type"] == "llm_call")`, and no schema
 widening is needed when a new caller arrives (see `decisions.md` D22). Pricing a run
-prices the uncached, cache-read and cache-write shares separately (D51).
+prices the uncached, cache-read and cache-write shares separately (D51). The single pricing table
+is `factorio_maxxing/pricing.py`; `run.py` prints each run's estimated cost from it when
+the run ends, and `python -m factorio_maxxing.pricing <trajectory>` prices any recorded
+run. The estimate is printed, never written to a trajectory (D55).
 
 Required consequences:
 

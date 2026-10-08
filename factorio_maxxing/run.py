@@ -35,8 +35,9 @@ from factorio_maxxing.goal import Goal
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
 from factorio_maxxing.loop import run_goal
+from factorio_maxxing.pricing import format_summary, summarize
 from factorio_maxxing.stuck import default_detector
-from factorio_maxxing.trajectory import TrajectoryRecorder
+from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
 from factorio_maxxing.verifier import LLMVerifier, StubVerifier, VerificationResult
 
 STUB_MODEL = "stub"
@@ -407,6 +408,11 @@ def main(argv: list[str] | None = None) -> int:
                 history_length=config.history_length,
                 max_interventions=config.max_interventions_without_progress,
             )
+    except KeyboardInterrupt:
+        # The steps already taken were paid for: report them before exiting.
+        print("\ninterrupted - usage so far:", file=sys.stderr)
+        _print_usage(path)
+        return 130
     finally:
         _close_environment(env)
 
@@ -415,6 +421,7 @@ def main(argv: list[str] | None = None) -> int:
         human.log_usage()
 
     _print_summary(result)
+    _print_usage(path)
     return 0
 
 
@@ -451,6 +458,22 @@ def _print_summary(result) -> None:
     print(f"interventions: {result.interventions}")
     print(f"reason:        {result.reason}")
     print(f"trajectory:    {result.trajectory_path}")
+
+
+def _print_usage(path: Path) -> None:
+    """Print the run's token usage and an estimated cost, read back from its trajectory.
+
+    Priced here, at analysis time, and printed only: the trajectory keeps raw counts and
+    no dollar figure (D9, D55). A trajectory that cannot be read is reported, never
+    raised - the run's outcome is already decided.
+    """
+    try:
+        records = read_trajectory(path)
+    except (OSError, ValueError) as error:
+        print(f"usage:         unavailable ({error})")
+        return
+    for line in format_summary(summarize(records)):
+        print(line)
 
 
 if __name__ == "__main__":
