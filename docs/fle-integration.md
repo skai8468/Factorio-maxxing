@@ -237,6 +237,7 @@ demonstration, not a measurement: measured runs keep the pause on (D36).
 The M1 demonstration: one watched run of "Research automation" from a fresh world, with a
 human rescuing the agent in text. `configs/demo-automation.json` is the measured goal-5
 config of rehearsal 4 (`20261008T180209-c4fb9b83`) - Haiku policy, Sonnet verifier (D52),
+both reached through OpenRouter on `OPEN_ROUTER_API_KEY` (D54),
 peaceful (D53), error threshold 3 and non-DONE 10 with a cap of 8 answers (D50) - plus
 the watching knobs above, `enable_vision` for a backup timelapse, and `max_steps` 250:
 rehearsal 4 needed 87 steps at 10x, and the scripted replay was still short of the goal

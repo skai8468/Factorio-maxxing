@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from factorio_maxxing.human import InteractiveHuman, NoHuman, ScriptedHuman
+from factorio_maxxing.pricing import price_key
 from factorio_maxxing.run import (
     Config,
     ConfigError,
@@ -335,15 +336,20 @@ def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
 
 
 def test_the_demo_config_is_rehearsal_4_made_watchable():
-    """Demo 1: the measured goal-5 settings (D50, D52, D53) plus the watching knobs."""
+    """Demo 1: the measured goal-5 settings (D50, D52, D53) plus the watching knobs.
+
+    The models are rehearsal 4's, reached through OpenRouter (D54): same model, same
+    price key, a different route.
+    """
     data = json.loads(Path("configs/demo-automation.json").read_text(encoding="utf-8"))
     assert set(data) == {field.name for field in fields(Config)}
 
     demo = Config(**data)
     measured = Config(**load_config("configs/live-measured.json"))
+    for key in ("policy_model", "verifier_model"):
+        assert price_key(getattr(demo, key)) == price_key(getattr(measured, key)), key
+        assert getattr(demo, key).startswith("open-router-"), key
     for key in (
-        "policy_model",
-        "verifier_model",
         "stuck_threshold",
         "non_done_threshold",
         "max_interventions_without_progress",
