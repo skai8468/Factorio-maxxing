@@ -13,6 +13,7 @@ caching (D51). Keys come from the environment, never a config file.
 """
 
 import ast
+import hashlib
 import os
 import re
 import time
@@ -35,6 +36,19 @@ class LLMResponse:
     cache_read_tokens: int
     cache_write_tokens: int
     latency_seconds: float
+    key_id: str | None = None
+    """Which API key paid for the call, as a one-way fingerprint (``key_fingerprint``).
+    Never the key. None for clients that use no key, such as the offline stub (D56)."""
+
+
+def key_fingerprint(api_key_env: str, key: str) -> str:
+    """Name a key without revealing it: its environment variable and a short hash.
+
+    Eight hex digits of SHA-256 tell keys apart in a spend report and cannot be turned
+    back into the key, so the fingerprint can be recorded and printed (D56).
+    """
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()[:8]
+    return f"{api_key_env}:{digest}"
 
 
 @dataclass(frozen=True)
@@ -257,9 +271,11 @@ class APIClient:
         self.max_tokens = max_tokens
         self.temperature = temperature
         self.workspace_id = workspace_id or os.environ.get(WORKSPACE_ID_ENV)
+        key = api_key or os.environ.get(self.provider.api_key_env)
+        self.key_id = key_fingerprint(self.provider.api_key_env, key) if key else None
         if client is None:
             build = _anthropic_client if self._anthropic else _openai_client
-            client = build(self.provider, api_key, self.workspace_id)
+            client = build(self.provider, key, self.workspace_id)
         self._client = client
 
     @property
@@ -301,6 +317,7 @@ class APIClient:
             cache_read_tokens=cache_read,
             cache_write_tokens=cache_write,
             latency_seconds=latency,
+            key_id=self.key_id,
         )
 
 

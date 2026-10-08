@@ -64,6 +64,7 @@ class LLMResponse:
     cache_read_tokens: int
     cache_write_tokens: int
     latency_seconds: float
+    key_id: str | None = None   # "<KEY_ENV>:<8 hex of sha256(key)>", never the key (D56)
 
 @dataclass(frozen=True)
 class Prompt:
@@ -168,7 +169,10 @@ widening is needed when a new caller arrives (see `decisions.md` D22). Pricing a
 prices the uncached, cache-read and cache-write shares separately (D51). The single pricing table
 is `factorio_maxxing/pricing.py`; `run.py` prints each run's estimated cost from it when
 the run ends, and `python -m factorio_maxxing.pricing <trajectory>` prices any recorded
-run. The estimate is printed, never written to a trajectory (D55).
+run. The estimate is printed, never written to a trajectory (D55). `llm_call` records carry
+`key_id` - the paying key's fingerprint - whenever the client used a key, and
+`python -m factorio_maxxing.spend` totals the estimate per key across all trajectories
+(D56).
 
 Required consequences:
 

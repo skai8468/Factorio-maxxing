@@ -1805,3 +1805,32 @@ figures: goal-5 rehearsal 2 ~$0.43, rehearsal 4 ~$2.12, rehearsal 1 ~$2.14.
 **Interrupted runs.** A `KeyboardInterrupt` during a step now prints the usage so far and
 exits 130, instead of a traceback. Ctrl+C at a help prompt is unchanged: `InteractiveHuman`
 treats it as declining (D8).
+
+---
+
+## D56 - Spend is tracked per API key, by fingerprint
+
+**Decision (research lead).** Every live model call records which API key paid for it, as
+`key_id` on its `llm_call` record: the key's environment variable and eight hex digits of
+its SHA-256, e.g. `OPEN_ROUTER_API_KEY:b64e3e3a`. `python -m factorio_maxxing.spend`
+totals the calls per key across every trajectory, prices them with D55's table, and
+marks the fingerprints of the keys set now. `--openrouter` adds OpenRouter's own usage
+figures for the current key, from `GET https://openrouter.ai/api/v1/key`.
+
+**Why a fingerprint.** It tells keys apart - an expired key and its replacement, two
+OpenRouter keys - and cannot be turned back into the key, so it can be recorded in
+trajectories and printed. The key itself is never stored or printed; tests assert
+this. OpenRouter's `label` field is not printed either: by default it is a masked form
+of the key.
+
+**Why D9 and D55 still hold.** Trajectories gain an identifier, not a dollar figure; the
+report prices raw counts at the moment it runs, exactly as the per-run summary does.
+`key_id` is written only when the client used a key, so the offline stub's records are
+unchanged.
+
+**What it does not know.** Runs recorded before this change carry no `key_id` and are
+reported together as "untracked" (24 runs, ~$14.61 when this was written). Calls made
+outside the harness - verifier replays, live checks - are not in any trajectory. And the
+figures are list-price estimates; the provider's console is the bill. For OpenRouter,
+`--openrouter` reports what the key actually spent, in OpenRouter's credits, including
+calls made outside the harness.

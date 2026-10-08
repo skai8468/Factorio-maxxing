@@ -62,7 +62,12 @@ class TrajectoryRecorder:
         )
 
     def record_llm_call(self, step: int, role: str, response: LLMResponse) -> None:
-        """Record raw usage for one model call. Never a computed cost (D9)."""
+        """Record raw usage for one model call. Never a computed cost (D9).
+
+        ``key_id`` - which API key paid, as a fingerprint, never the key - is written
+        when the client used one, so spend can be totalled per key (D56).
+        """
+        extra = {"key_id": response.key_id} if response.key_id else {}
         self._write(
             "llm_call",
             step,
@@ -73,6 +78,7 @@ class TrajectoryRecorder:
             cache_read_tokens=response.cache_read_tokens,
             cache_write_tokens=response.cache_write_tokens,
             latency_seconds=response.latency_seconds,
+            **extra,
         )
 
     def record_verification(self, step: int, result: VerificationResult) -> None:

@@ -309,3 +309,11 @@ def test_the_output_directory_is_created(tmp_path):
     target = tmp_path / "nested" / "frames"
     assert extract_map_images(path, target)
     assert target.is_dir()
+
+
+def test_llm_call_records_the_key_fingerprint_when_there_is_one(recorder):
+    """D56: which key paid, as a fingerprint, so spend can be totalled per key."""
+    recorder.record_llm_call(
+        0, "policy", policy_response(key_id="ANTHROPIC_API_KEY:3f9a1c2e")
+    )
+    assert read_trajectory(recorder.path)[0]["key_id"] == "ANTHROPIC_API_KEY:3f9a1c2e"
