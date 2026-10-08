@@ -1767,8 +1767,9 @@ Sonnet 5.5 $2/$10, Opus 5.5 $4/$20 per million input/output. Build-plan section 
 that OpenRouter "marks up ~2-4x" does not match those prices; it is flagged for the
 research lead rather than edited, since the build plan outranks this log.
 
-**Unverified live.** No OpenRouter key was configured when this was written. The request
-shape and usage fields follow OpenRouter's documentation; the first live call confirms
-them (a cache write, then a cache read) and this entry is corrected if they differ.
+**Verified live (2026-10-08).** Two calls through `open-router-anthropic/claude-haiku-4.5`
+with the full API reference: the first `input=36715 cache_write=36598 cache_read=0`, the
+second `input=36715 cache_write=0 cache_read=36598` - the same figures as the direct
+Messages API route (D51), so the request shape and both usage fields are confirmed.
 Models that think by default, such as Sonnet 5.5, may spend output tokens on reasoning
 within `max_tokens` on this route too; measure one step before a long run.
