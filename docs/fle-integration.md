@@ -41,6 +41,11 @@ to exist there. Keep them in `~/fle-work/.env.local` - outside the repository, s
 cannot be committed - and source it before a live run. Do not use FLE's own
 `~/fle-work/.env`: its `ANTHROPIC_API_KEY=XXX` placeholder would shadow the real key.
 
+An OpenRouter key goes in the same file as `OPEN_ROUTER_API_KEY` - FLE's name for it, kept
+so the two harnesses read one variable - and is used by any `open-router-` model string,
+e.g. `open-router-anthropic/claude-sonnet-5.5`. OpenRouter needs no workspace id, and is
+never sent one (D54).
+
 **`wsl --install` alone was not sufficient.** It enabled `VirtualMachinePlatform` and
 installed the kernel, but distro registration then failed with
 `HCS_E_HYPERV_NOT_INSTALLED`, whose error text misleadingly says to enable Virtual

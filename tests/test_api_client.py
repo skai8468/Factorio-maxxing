@@ -390,3 +390,94 @@ def test_no_workspace_id_is_configured_when_the_environment_is_empty(monkeypatch
     monkeypatch.delenv("ANTHROPIC_WORKSPACE_ID", raising=False)
     api, _ = client()
     assert api.workspace_id is None
+
+
+# --- OpenRouter (D54) ---------------------------------------------------------------
+
+
+def test_only_openrouter_marks_cache_parts_on_the_openai_protocol():
+    assert PROVIDERS["open-router"].cache_parts is True
+    assert {n for n, p in PROVIDERS.items() if p.cache_parts} == {"open-router"}
+
+
+def test_openrouter_sends_the_cached_part_as_a_marked_content_part():
+    api, fake = client("open-router-anthropic/claude-sonnet-5.5")
+    prompt = Prompt(cached="ENVIRONMENT API\n  x", rest="GOAL\n  g")
+    api.generate(prompt)
+    request = fake.completions.requests[0]
+    assert request["model"] == "anthropic/claude-sonnet-5.5"
+    content = request["messages"][0]["content"]
+    assert content[0] == {
+        "type": "text",
+        "text": "ENVIRONMENT API\n  x",
+        "cache_control": {"type": "ephemeral"},
+    }
+    assert "".join(part["text"] for part in content) == str(prompt)
+
+
+def test_openrouter_sends_a_plain_prompt_as_a_string():
+    api, fake = client("open-router-anthropic/claude-sonnet-5.5")
+    api.generate("build a drill")
+    assert fake.completions.requests[0]["messages"][0]["content"] == "build a drill"
+
+
+def test_a_plain_openai_provider_never_sends_cache_markers():
+    api, fake = client("gpt-4o")
+    api.generate(Prompt(cached="ENVIRONMENT API\n  x", rest="GOAL\n  g"))
+    assert isinstance(fake.completions.requests[0]["messages"][0]["content"], str)
+
+
+def test_openrouter_cache_writes_are_read_from_prompt_tokens_details():
+    usage = SimpleNamespace(
+        prompt_tokens=50000,
+        completion_tokens=500,
+        prompt_tokens_details=SimpleNamespace(cached_tokens=0, cache_write_tokens=36000),
+    )
+    reply = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))], usage=usage
+    )
+    api, _ = client("open-router-anthropic/claude-sonnet-5.5", response=reply)
+    response = api.generate("p")
+    assert response.input_tokens == 50000
+    assert response.cache_write_tokens == 36000
+    assert response.cache_read_tokens == 0
+
+
+def test_the_workspace_header_is_never_sent_on_the_openai_protocol(monkeypatch):
+    """It identifies an Anthropic account; OpenRouter has no use for it (D54)."""
+    import sys
+    import types
+
+    captured = {}
+
+    class RecordingOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules, "openai", types.SimpleNamespace(OpenAI=RecordingOpenAI)
+    )
+    monkeypatch.setenv("OPEN_ROUTER_API_KEY", "test-key-not-used")
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_secret")
+    APIClient("open-router-anthropic/claude-sonnet-5.5")
+    assert "wrkspc_secret" not in repr(captured)
+    assert "default_headers" not in captured
+
+
+def test_the_workspace_header_is_still_sent_on_the_anthropic_protocol(monkeypatch):
+    import sys
+    import types
+
+    captured = {}
+
+    class RecordingAnthropic:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setitem(
+        sys.modules, "anthropic", types.SimpleNamespace(Anthropic=RecordingAnthropic)
+    )
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-used")
+    monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_mine")
+    APIClient("claude-haiku-4-5")
+    assert captured["default_headers"] == {"anthropic-workspace-id": "wrkspc_mine"}

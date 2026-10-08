@@ -1736,3 +1736,39 @@ belongs beside the starting inventory (D40) in any reported result.
 **Not addressed.** FLE's timeout cannot stop a running program (`future.cancel()` on a
 running future is a no-op), so a timed-out program keeps executing beside the next step.
 Recorded in `docs/fle-integration.md`; not fixed here.
+
+---
+
+## D54 - OpenRouter caches the API reference, and never receives the workspace id
+
+**Decision (research lead).** OpenRouter is a supported route for every model it serves,
+selected by the existing `open-router-` prefix with `OPEN_ROUTER_API_KEY`. Three changes
+make it usable at the cost the project needs:
+
+- **Caching.** The routing table gains `cache_parts`, on for `open-router` only. On the
+  OpenAI-compatible protocol it sends a `Prompt`'s cached part - the API reference - as a
+  text content part marked `cache_control: ephemeral`, the format OpenRouter documents
+  for Claude. The parts concatenate to `str(prompt)` exactly, as on the Messages API
+  (D51), so the model reads the same text. Other OpenAI-compatible endpoints keep a plain
+  string: a marker there is undocumented and may be rejected.
+- **Usage.** OpenRouter reports cache writes as `prompt_tokens_details.cache_write_tokens`
+  (reads as `cached_tokens`). `_read_usage` now reads it; it would otherwise have recorded
+  every write as zero. `input_tokens` keeps meaning all input (D51).
+- **The workspace id stays with Anthropic.** D27 sent `anthropic-workspace-id` to every
+  provider on the reasoning that others ignore it. Since D51 the only provider that uses
+  it speaks the Anthropic protocol, and sending an account identifier to OpenRouter or
+  any other third party has no purpose. The header now goes on the Anthropic protocol
+  only - a routing-table field, not a branch on a model. This amends D27.
+
+**Why OpenRouter at all.** One key reaches every provider's models, which suits the
+capability-ladder comparisons D5 anticipates. Its listed per-token prices for Claude
+(checked 2026-10-08 via its public models endpoint) match Anthropic's: Haiku 4.5 $1/$5,
+Sonnet 5.5 $2/$10, Opus 5.5 $4/$20 per million input/output. Build-plan section 8's note
+that OpenRouter "marks up ~2-4x" does not match those prices; it is flagged for the
+research lead rather than edited, since the build plan outranks this log.
+
+**Unverified live.** No OpenRouter key was configured when this was written. The request
+shape and usage fields follow OpenRouter's documentation; the first live call confirms
+them (a cache write, then a cache read) and this entry is corrected if they differ.
+Models that think by default, such as Sonnet 5.5, may spend output tokens on reasoning
+within `max_tokens` on this route too; measure one step before a long run.

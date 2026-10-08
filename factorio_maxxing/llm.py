@@ -161,6 +161,11 @@ class Provider:
     api: str = "openai"
     """The wire protocol: "openai" (chat completions) or "anthropic" (messages).
     Chosen per provider in this table, so no code branches on a model (D5, D51)."""
+    cache_parts: bool = False
+    """On the "openai" protocol, send a ``Prompt``'s cached part as a content part
+    marked ``cache_control``. OpenRouter honours the marker for Claude and Gemini and
+    caches other models automatically; a plain OpenAI-compatible endpoint may reject
+    it, so it is opt-in per provider (D54)."""
 
 
 PROVIDERS: dict[str, Provider] = {
@@ -172,7 +177,10 @@ PROVIDERS: dict[str, Provider] = {
     ),
     "together": Provider("https://api.together.xyz/v1", "TOGETHER_API_KEY"),
     "open-router": Provider(
-        "https://openrouter.ai/api/v1", "OPEN_ROUTER_API_KEY", "open-router-"
+        "https://openrouter.ai/api/v1",
+        "OPEN_ROUTER_API_KEY",
+        "open-router-",
+        cache_parts=True,
     ),
     "ollama": Provider("http://localhost:11434/v1", "OLLAMA_API_KEY", "ollama-"),
 }
@@ -272,7 +280,8 @@ class APIClient:
             request["messages"] = [{"role": "user", "content": content}]
             reply = self._client.messages.create(**request)
         else:
-            request["messages"] = [{"role": "user", "content": str(prompt)}]
+            content = _cached_parts(prompt) if self.provider.cache_parts else None
+            request["messages"] = [{"role": "user", "content": content or str(prompt)}]
             reply = self._client.chat.completions.create(**request)
         latency = time.perf_counter() - started
 
@@ -295,27 +304,36 @@ class APIClient:
         )
 
 
-def _anthropic_content(prompt: str | Prompt) -> str | list[dict[str, Any]]:
-    """The user message content, with the cached part as its own marked block.
+def _cached_parts(prompt: str | Prompt) -> list[dict[str, Any]] | None:
+    """The prompt as two text parts, the cached one marked ``cache_control``.
 
-    The two blocks concatenate to ``str(prompt)`` exactly - the separator travels at the
-    start of the second block - so the model reads what it would read uncached.
+    The parts concatenate to ``str(prompt)`` exactly - the separator travels at the
+    start of the second - so the model reads what it would read uncached. None when
+    there is nothing to cache. The Messages API and OpenRouter's chat completions take
+    the same text-part shape (D51, D54).
     """
     if not isinstance(prompt, Prompt) or not prompt.cached:
-        return str(prompt)
+        return None
     return [
         {"type": "text", "text": prompt.cached, "cache_control": {"type": "ephemeral"}},
         {"type": "text", "text": f"\n\n{prompt.rest}"},
     ]
 
 
+def _anthropic_content(prompt: str | Prompt) -> str | list[dict[str, Any]]:
+    """The user message content, with the cached part as its own marked block."""
+    return _cached_parts(prompt) or str(prompt)
+
+
 def auth_headers(workspace_id: str | None = None) -> dict[str, str]:
     """Extra headers an account may require.
 
     An identity-linked API key must name the workspace the request acts in, so a
-    workspace id is sent whenever one is configured. Sent for every provider: a
-    provider that does not use it ignores it, and branching on provider here would put
-    account shape into the routing table.
+    workspace id is sent whenever one is configured - on the Anthropic protocol only.
+    It identifies an Anthropic account, and no other provider has a use for it, so
+    sending it to OpenRouter or any OpenAI-compatible endpoint would only hand a third
+    party an identifier (D54). The protocol is a routing-table field, so this is not a
+    branch on a model.
     """
     return {"anthropic-workspace-id": workspace_id} if workspace_id else {}
 
@@ -336,11 +354,8 @@ def _openai_client(
             "the openai package is required for live model calls; "
             'install it with pip install -e ".[api]"'
         ) from error
-    return OpenAI(
-        base_url=provider.base_url,
-        api_key=key,
-        default_headers=auth_headers(workspace_id) or None,
-    )
+    # No workspace header: it identifies an Anthropic account (D54).
+    return OpenAI(base_url=provider.base_url, api_key=key)
 
 
 def _anthropic_client(
@@ -406,8 +421,11 @@ def _read_text(completion: Any) -> str:
 def _read_usage(usage: Any) -> tuple[int, int, int, int]:
     """Read raw token usage, defaulting anything a provider omits to zero.
 
-    Cache field names are unverified against every provider; confirm on the first live
-    call per provider (docs/fle-integration.md).
+    ``prompt_tokens`` counts every input token, cached or not, as the harness's
+    ``input_tokens`` always has. OpenRouter reports cache reads as
+    ``prompt_tokens_details.cached_tokens`` and writes as
+    ``prompt_tokens_details.cache_write_tokens`` (D54); other providers' names are
+    read defensively and confirmed on the first live call (docs/fle-integration.md).
     """
     if usage is None:
         return 0, 0, 0, 0
@@ -416,7 +434,9 @@ def _read_usage(usage: Any) -> tuple[int, int, int, int]:
     cache_read = _as_int(getattr(details, "cached_tokens", 0)) or _as_int(
         getattr(usage, "cache_read_input_tokens", 0)
     )
-    cache_write = _as_int(getattr(usage, "cache_creation_input_tokens", 0))
+    cache_write = _as_int(getattr(details, "cache_write_tokens", 0)) or _as_int(
+        getattr(usage, "cache_creation_input_tokens", 0)
+    )
     return (
         _as_int(getattr(usage, "prompt_tokens", 0)),
         _as_int(getattr(usage, "completion_tokens", 0)),
