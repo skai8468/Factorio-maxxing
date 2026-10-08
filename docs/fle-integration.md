@@ -239,60 +239,72 @@ spectating player, and nothing FLE does for the agent reads a connected player -
 watched run behaves like an unwatched one with the pause off. It is still a
 demonstration, not a measurement: measured runs keep the pause on (D36).
 
-### Demo 1 - recording a goal-5 run (M1)
+### Demo 1 - recording a watched steam-power run (M1)
 
-The M1 demonstration: one watched run of "Research automation" from a fresh world, with a
-human rescuing the agent in text. `configs/demo-automation.json` is the measured goal-5
-config of rehearsal 4 (`20261008T180209-c4fb9b83`) - Haiku policy, Sonnet verifier (D52),
-both reached through OpenRouter on `OPEN_ROUTER_API_KEY` (D54),
-peaceful (D53), error threshold 3 and non-DONE 10 with a cap of 8 answers (D50) - plus
-the watching knobs above except slow mode, `enable_vision` for a backup timelapse, and
-`max_steps` 250:
-rehearsal 4 needed 87 steps at 10x, and the scripted replay was still short of the goal
-at 150. A test pins the shared settings to `live-measured.json`. It is a demonstration,
-not a measurement (D36, D46).
+The M1 demonstration: one watched run from a fresh world, with the agent **walking** and a
+human rescuing it in text. Scaled down on 2026-10-09 from "Research automation" to
+**steam power**, the part of goal 5 where every rehearsal needed help, after three
+attempts at the full goal failed for harness reasons (D57-D59), not agent ones.
 
-**Fast mode, not slow (first attempt, 2026-10-09).** With `fast_mode: false` the agent
-walked into a big rock and stuck there, still "walking" with 85 path points queued. The
-step outlived FLE's 120 s evaluation timeout, which cannot stop a running step, so the
-slow-mode walk-wait kept polling the server while the next step started on the same
-RCON client - `factorio_rcon.ClientBusy` - and the run crashed at step 4. Fast mode
-teleports along the path, cannot collide, and has no walk-wait: it is how rehearsal 4
-ran. Slow mode stays available, but needs stuck-walk handling before a long run.
+`configs/demo-steam-power.json` is `demo-automation.json` - rehearsal 4's settings:
+Haiku policy and Sonnet verifier through OpenRouter (D52, D54), peaceful (D53),
+thresholds 3/10 with a cap of 8 answers (D50), the starting kit, 1x, no pause, vision for
+a backup timelapse - with **slow mode on**, **`step_timeout` 600** and `max_steps` 120.
+Slow walking is safe now that a stuck walk is finished at its destination (D58);
+`step_timeout` gives a 1x step room to harvest and wait without outliving FLE's
+evaluation (D58). A test pins the shared settings. It is a demonstration, not a
+measurement (D36, D46, D48). `demo-automation.json` stays as the fast-mode full-goal
+fallback.
+
+The goal:
+
+> Unlock steam power and build a working steam power setup: an offshore pump on water, a
+> boiler fuelled with coal and a steam engine, connected with pipes, so that the boiler
+> is WORKING and producing steam for the steam engine.
+
+It does not ask for the steam engine to be `WORKING`: an engine with nothing to power
+never is. Success is the boiler working and steam in `FLOWS`.
 
 **Before.**
-- Windows will not sleep for the next few hours (Settings -> Power), and OBS has room
-  to record that long.
-- OBS scene: the **Factorio window and the run's terminal side by side**. Trajectory
-  records carry no timestamps, and the help prompts and typed answers are the point of
-  the demo, so the terminal belongs in the frame rather than in a later edit.
-- The three answers that rescued rehearsal 4 are in `configs/hints/goal5-rehearsal4.json`;
-  keep them open to paste.
+- Windows will not sleep (Settings -> Power), the laptop is plugged in, and OBS has
+  room to record (720p, 30 fps, hardware encoder, mkv).
+- OBS scene: the **Factorio window and the run's terminal side by side** (Window Capture
+  method "Windows 10 (1903 and up)" for Windows Terminal). Trajectory records carry no
+  timestamps, and the help prompts are the point of the demo.
 
 **Recording.**
-1. WSL terminal A - restart the cluster and start the camera, as step 1 above. Leave it
-   open: it holds WSL up.
-2. Join from Factorio 2.0.77 (`localhost:34197`) and confirm the `JOIN` in the logs.
+1. WSL terminal A - restart the cluster and start the camera, as step 1 above. Wait for
+   *map generation generated* (about 10 s) before joining. Leave it open.
+2. Join from Factorio 2.0.77 (`localhost:34197`). Terminal A should say *waiting for a
+   run*; you are in god mode and locked out.
 3. Start the OBS recording.
 4. WSL terminal B - start the run:
 
    ```bash
-   source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/demo-automation.json --goal 'Research automation'
+   source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/demo-steam-power.json --goal 'Unlock steam power and build a working steam power setup: an offshore pump on water, a boiler fuelled with coal and a steam engine, connected with pipes, so that the boiler is WORKING and producing steam for the steam engine.'
    ```
 
-5. At each help prompt, answer only when the situation matches one of the three
-   answers, and press Enter on a blank line otherwise:
-   - no lab in the inventory, or "Could not place lab" read as a full inventory -> the lab answer;
-   - lab placed with `NO_POWER`, and `steam-power` missing from the researched list -> the steam answer;
-   - boiler, steam engine or pipes failing to connect -> the power-chain answer.
-   Timing matters as much as wording: the scripted replay gave the power-chain answer
-   before any boiler existed and did not reproduce the result.
+5. **Type nothing into terminal B except at a live prompt.** A prompt now discards
+   anything typed before it appeared (D57), so an early paste is lost, not queued. At a
+   prompt, paste with right-click, check it is one line, press Enter twice. Answer when
+   the situation matches, otherwise Enter on a blank line:
+   - `steam-power` not in the researched list -> it unlocks after 50 iron plates have
+     been smelted in total: smelt iron ore in a furnace until it appears;
+   - "Could not place offshore-pump/boiler/steam-engine" -> the error lists the
+     inventory and means the item is missing: craft the offshore pump, boiler, steam
+     engine and pipes first;
+   - boiler or steam engine failing to connect -> build in the API reference's order,
+     clear stray pipes, and place the steam engine on the other side of the boiler
+     rather than adding pipes.
 6. When the run prints its summary, stop OBS. Then check the trajectory against the
-   recorded state - `automation` researched - not only the verifier's verdict.
+   recorded state - a boiler `WORKING` with steam in `FLOWS` - not only the verdict.
 
-**If the client drops,** the session cannot be rejoined (D43): restart the cluster and
-begin again. **The backup** is the renderer timelapse built from the trajectory, as in
-"Building a timelapse of a run" below.
+A stuck walk now logs *walk stuck at ...; finishing it at the destination* and the
+agent appears at its destination: that is the recovery working, not a fault.
+
+**If the client drops,** choose Quit, never Reconnect: the session cannot be rejoined
+(D43). Restart the cluster and begin again. **The backup** is the renderer timelapse
+built from the trajectory, as in "Building a timelapse of a run" below.
 
 **`fle` writes state into the current working directory** - a `.env` template of `XXX`
 placeholders, and `.fle/data.db` for its SQLite store. Invoked through `wsl.exe`, the

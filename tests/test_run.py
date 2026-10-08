@@ -369,6 +369,30 @@ def test_the_demo_config_is_rehearsal_4_made_watchable():
     assert demo.max_steps == 250
 
 
+def test_the_slow_demo_is_the_automation_demo_walking_with_room_per_step():
+    """Demo 1, scaled to steam power: slow walking (D58 makes it safe), 600 s per step."""
+    data = json.loads(Path("configs/demo-steam-power.json").read_text(encoding="utf-8"))
+    assert set(data) == {field.name for field in fields(Config)}
+    slow = Config(**data)
+    fast = Config(**load_config("configs/demo-automation.json"))
+    for key in (
+        "policy_model",
+        "verifier_model",
+        "stuck_threshold",
+        "non_done_threshold",
+        "max_interventions_without_progress",
+        "starting_inventory",
+        "peaceful",
+        "game_speed",
+        "pause_after_action",
+        "enable_vision",
+    ):
+        assert getattr(slow, key) == getattr(fast, key), key
+    assert slow.fast_mode is False
+    assert slow.step_timeout == 600
+    assert slow.max_steps == 120
+
+
 def test_task_key_defaults_to_open_play():
     assert Config().task_key == "open_play"
     assert resolve_config(parse("--goal", "g")).task_key == "open_play"

@@ -1,0 +1,26 @@
+{
+  "policy_model": "open-router-anthropic/claude-haiku-4.5",
+  "verifier_model": "open-router-anthropic/claude-sonnet-5.5",
+  "human": "interactive",
+  "stuck_detector": "consecutive_failures+error_signature",
+  "stuck_threshold": 3,
+  "non_done_threshold": 10,
+  "max_interventions_without_progress": 8,
+  "verification_interval": 1,
+  "max_steps": 120,
+  "history_length": 16,
+  "environment": "live",
+  "task_key": "open_play",
+  "starting_inventory": {
+    "burner-mining-drill": 3,
+    "stone-furnace": 2
+  },
+  "enable_vision": true,
+  "pause_after_action": false,
+  "game_speed": 1,
+  "fast_mode": false,
+  "peaceful": true,
+  "step_timeout": 600,
+  "trajectory_dir": "trajectories",
+  "api_reference": "configs/fle_api_reference.md"
+}
