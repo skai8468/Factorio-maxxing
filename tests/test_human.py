@@ -7,6 +7,8 @@ exhausted hint list degrades to NoHuman.
 
 import logging
 
+import pytest
+
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.human import (
     Hint,
@@ -177,3 +179,81 @@ def test_no_backend_receives_the_environment():
         ScriptedHuman(["a"]),
     ):
         assert human.ask(GOAL, OBSERVATION, REASON) in (None, "a")
+
+
+# --- reading the terminal directly (D57) --------------------------------------------
+
+
+class _FakeTty:
+    def __init__(self, line):
+        self._line = line
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def readline(self):
+        return self._line
+
+
+def test_terminal_input_reads_a_line_from_the_terminal_not_stdin():
+    from factorio_maxxing.human import TerminalInput
+
+    opened = []
+
+    def opener(path, **kwargs):
+        opened.append(path)
+        return _FakeTty("power the lab\n")
+
+    read = TerminalInput(opener=opener, fallback=lambda: "from stdin")
+    assert read() == "power the lab"
+    assert opened == ["/dev/tty"]
+
+
+def test_terminal_input_reports_end_of_input():
+    from factorio_maxxing.human import TerminalInput
+
+    read = TerminalInput(opener=lambda path, **kw: _FakeTty(""))
+    with pytest.raises(EOFError):
+        read()
+
+
+def test_terminal_input_falls_back_when_there_is_no_terminal():
+    from factorio_maxxing.human import TerminalInput
+
+    def no_tty(path, **kwargs):
+        raise OSError("no controlling terminal")
+
+    assert TerminalInput(opener=no_tty, fallback=lambda: "typed")() == "typed"
+
+
+def test_terminal_flush_is_harmless_without_a_terminal():
+    from factorio_maxxing.human import TerminalInput
+
+    TerminalInput(path="/definitely/not/a/tty").flush()
+
+
+def test_typed_ahead_input_is_discarded_before_reading():
+    """A stray blank line typed between prompts must not decline the next one."""
+    order = []
+    replies = iter(["answer", ""])
+
+    def read():
+        order.append("read")
+        return next(replies)
+
+    human = InteractiveHuman(
+        input_fn=read, output_fn=lambda _: None, flush_fn=lambda: order.append("flush")
+    )
+    assert human.ask(GOAL, OBSERVATION, REASON) == "answer"
+    assert order[0] == "flush"
+
+
+def test_the_default_backend_reads_the_terminal_and_flushes():
+    from factorio_maxxing.human import TerminalInput
+
+    human = InteractiveHuman()
+    assert isinstance(human._input, TerminalInput)
+    assert human._flush == human._input.flush

@@ -1834,3 +1834,31 @@ outside the harness - verifier replays, live checks - are not in any trajectory.
 figures are list-price estimates; the provider's console is the bill. For OpenRouter,
 `--openrouter` reports what the key actually spent, in OpenRouter's credits, including
 calls made outside the harness.
+
+---
+
+## D57 - The help prompt reads the terminal itself, and discards typed-ahead input
+
+**Decision (research lead).** `InteractiveHuman` reads the operator's answer from the
+controlling terminal (`/dev/tty`), opened afresh for each line, instead of `sys.stdin`,
+and discards anything typed before the prompt appeared (`termios.tcflush`). The prompt
+says so. Without a terminal - Windows, a pipe - it falls back to `input()`. Injected
+`input_fn`s are used as given, so the offline tests are unchanged.
+
+**Finding, measured 2026-10-09 (Demo 1, attempt 3).** One answer was accepted, at step 29.
+Every one of the next five help prompts (steps 39-79) recorded a decline, although the
+operator had pasted the power-chain answer three times: 2,472 bytes - exactly three
+copies of the 824-byte answer with its blank line - sat unread in the run's terminal
+queue (`FIONREAD`). The run's stdin was that terminal, and FLE never touches
+`sys.stdin`. The declines began after step 30, the run's first evaluation timeout, whose
+step went on running in FLE's thread pool. The exact mechanism inside Python's stdin was
+not pinned down; reading `/dev/tty` directly takes it out of the path.
+
+Separately, anything typed between prompts - a paste, a second Enter - is queued and read
+by the next prompt, and a leftover blank line declines it before the operator sees it.
+Flushing at the prompt makes a prompt wait for what is typed *at* it.
+
+**Consequence.** A declined prompt now means the operator declined. Since step 30 of that
+run the agent had been unassisted without anyone choosing it; the trajectory records
+those prompts as declines, which is true of what the agent received and false of the
+operator's intent. That run is reported with this caveat.

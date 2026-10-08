@@ -14,9 +14,10 @@ an improvement can be attributed to the harness rather than to a better hint.
 """
 
 import logging
+import os
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from factorio_maxxing.goal import Goal
 
@@ -51,21 +52,87 @@ class NoHuman:
         return None
 
 
+TTY_PATH = "/dev/tty"
+
+
+class TerminalInput:
+    """Read the operator's answer from the controlling terminal itself (D57).
+
+    Not ``sys.stdin``: measured live, after FLE's evaluation timeout left a timed-out
+    step running in a background thread, every later ``input()`` returned end-of-input
+    at once - five help prompts declined while three pasted answers sat unread in the
+    terminal's queue. Each read here opens ``/dev/tty`` afresh, so no state in the
+    process's stdin object can decline a prompt.
+
+    ``flush`` discards whatever was typed before the prompt appeared. A paste or a stray
+    Enter typed between prompts is otherwise read by the next prompt, and a leftover
+    blank line declines it before the operator sees it.
+
+    Where there is no controlling terminal - Windows, a pipe - it falls back to
+    ``fallback``, by default the builtin ``input``.
+    """
+
+    def __init__(
+        self,
+        path: str = TTY_PATH,
+        fallback: Callable[[], str] = input,
+        opener: Callable[..., Any] = open,
+    ):
+        self._path = path
+        self._fallback = fallback
+        self._opener = opener
+
+    def __call__(self) -> str:
+        try:
+            with self._opener(self._path, encoding="utf-8", errors="replace") as tty:
+                line = tty.readline()
+        except OSError:
+            return self._fallback()
+        if line == "":
+            raise EOFError
+        return line.rstrip("\r\n")
+
+    def flush(self) -> None:
+        """Discard typed-ahead input on the terminal. A no-op where there is none."""
+        try:
+            import termios
+
+            fd = os.open(self._path, os.O_RDONLY | getattr(os, "O_NOCTTY", 0))
+        except (ImportError, OSError):
+            return
+        try:
+            termios.tcflush(fd, termios.TCIFLUSH)
+        except OSError:
+            pass
+        finally:
+            os.close(fd)
+
+
 class InteractiveHuman:
     """CLI backend for development and real runs.
 
     Reads lines until a blank line or end of input. A blank first line means no
     assistance, so an operator can decline without aborting the run. EOF and interrupt
     are treated the same way rather than crashing a run in progress.
+
+    By default it reads the terminal directly and discards input typed before the prompt
+    (``TerminalInput``, D57). An injected ``input_fn`` is used as given, with no flush
+    unless ``flush_fn`` is supplied too, so tests stay deterministic.
     """
 
     def __init__(
         self,
-        input_fn: Callable[[], str] = input,
+        input_fn: Callable[[], str] | None = None,
         output_fn: Callable[[str], None] = print,
+        flush_fn: Callable[[], None] | None = None,
     ):
+        if input_fn is None:
+            terminal = TerminalInput()
+            input_fn = terminal
+            flush_fn = flush_fn or terminal.flush
         self._input = input_fn
         self._output = output_fn
+        self._flush = flush_fn or (lambda: None)
         self.call_count = 0
 
     def ask(self, goal: Goal, observation: str, reason: str) -> str | None:
@@ -78,6 +145,8 @@ class InteractiveHuman:
         self._output(observation)
         self._output("")
         self._output("Type guidance. Blank line to finish, or blank line to decline.")
+        self._output("(Anything typed before this prompt appeared has been discarded.)")
+        self._flush()
 
         lines: list[str] = []
         while True:
