@@ -150,6 +150,12 @@ class Config:
 
     False is FLE's slow mode: the character visibly walks. It changes what the agent's
     tools return, so it is for watching a run, never for measuring one (D48)."""
+    peaceful: bool = True
+    """Remove all enemies after every reset and step. Live only.
+
+    On by default, which is what FLE's own ``peaceful=True`` intends and fails to
+    deliver: an agent walked into a nest, died, and lost its whole inventory without
+    being told (D53). False leaves the map's enemies alone."""
     trajectory_dir: str = "trajectories"
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
@@ -305,6 +311,7 @@ def _build_live_environment(config: Config) -> EnvProtocol:
             starting_inventory=config.starting_inventory,
             game_speed=config.game_speed,
             fast_mode=config.fast_mode,
+            peaceful=config.peaceful,
         )
     except ImportError as exc:
         raise ConfigError(

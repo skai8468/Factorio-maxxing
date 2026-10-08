@@ -19,6 +19,7 @@
   "pause_after_action": true,
   "game_speed": null,
   "fast_mode": true,
+  "peaceful": true,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"
 }

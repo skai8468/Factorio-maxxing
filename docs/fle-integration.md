@@ -813,3 +813,43 @@ reads is unchanged, so the comparison with the baseline stays honest (D1).
 
 **Still unconfirmed:** that supplying this actually stops the model inventing calls. That
 needs a live run (item 18), and until then the fix is reasoned, not demonstrated.
+
+## Enemies, death and the evaluation timeout - measured 2026-10-08
+
+**FLE intends a world without enemies and does not deliver one.** `FactorioInstance`
+defaults to `peaceful=True`, which calls `storage.utils.remove_enemies()` (`env/mods/
+utils.lua`) during `initialise()`. Two gaps:
+
+- It runs **before** `_generate_chunks(chunk_radius=25)` (`env/instance.py`), so the
+  start area is generated after the clearing, with nests in it. It also kills units and
+  destroys `unit-spawner`s only - **worms (`turret`) survive**.
+- FLE's own evaluator calls `gym_env.background_step()` after every step, commented
+  *"Clear enemies after each step to prevent interference"* (`eval/inspect/integration/
+  solver.py`). Its command is `local surface = game.player.surface; ...`, and
+  **`game.player` is `nil` over RCON** (measured), so it fails silently - wrapped in a
+  `try` that only logs. Its chunk command indexes `game.players[0]`, which Lua's 1-based
+  tables never have.
+
+Measured on the live map after a rehearsal: **2,052 biters, 919 nests, 1,119 worms**,
+`peaceful_mode = false`, the nearest enemy a small worm **~170 tiles from spawn**.
+
+**An agent that walks into them dies, and nothing says so.** In rehearsal 3 the agent
+walked to (-2000, -2000), where 2,283 enemies stood within 300 tiles, and was killed.
+Its corpse held the whole inventory (20 science packs, 3 drills, gears, cable); a new
+agent character appeared at (-990, -999); `game.forces.enemy` kill statistics showed one
+`character`. The observation reports no death: the next step simply showed an empty
+inventory, which neither the agent nor the verifier could explain.
+
+**The evaluation timeout was a consequence, not the cause** - and a hazard in its own
+right. `gym_env.step` evaluates with `timeout=120`. `instance.eval_with_error` runs the
+program in a thread pool and, on `FutureTimeoutError`, calls `future.cancel()` - which
+cannot stop a future that is already running. **A timed-out program keeps executing**,
+in the background, while the next step's program starts in the same namespace.
+
+**What the harness does (D53).** `RealFactorioEnv(peaceful=True)`, the default, sends
+`PEACEFUL_LUA` after every reset and every step: `peaceful_mode = true` on
+`game.surfaces[1]`, expansion and evolution off, and every `force = "enemy"` entity
+destroyed. Measured: the first pass removed **4,090** entities in 0.18 s, a clean pass
+takes 0.05 s, and generating chunks at (3000, 3000) - as a long walk does - created
+**374** new enemy entities that the next pass removed. That last figure is why it runs
+per step and not only at reset.

@@ -442,7 +442,7 @@ def test_fast_mode_is_fles_own_by_default(monkeypatch):
     from factorio_maxxing.envs import RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
-    RealFactorioEnv().reset()
+    RealFactorioEnv(peaceful=False).reset()
     assert fake_env.instance.fast is True
     assert fake_env.instance.rcon_client.sent == []
     assert fake_env.instance.post_tool_hooks == {}
@@ -457,7 +457,7 @@ def test_slow_mode_makes_only_walking_slow(monkeypatch):
     )
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
-    RealFactorioEnv(fast_mode=False)
+    RealFactorioEnv(fast_mode=False, peaceful=False)
     assert fake_env.instance.rcon_client.sent == [
         "/sc storage.fast = false",
         WALKING_HANDLER_LUA,
@@ -470,7 +470,7 @@ def test_slow_mode_leaves_fles_python_side_fast(monkeypatch):
     from factorio_maxxing.envs import RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
-    RealFactorioEnv(fast_mode=False).reset()
+    RealFactorioEnv(fast_mode=False, peaceful=False).reset()
     assert fake_env.instance.fast is True
 
 
@@ -478,7 +478,7 @@ def test_slow_mode_hooks_move_to_once_across_resets(monkeypatch):
     from factorio_maxxing.envs import RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
-    env = RealFactorioEnv(fast_mode=False)
+    env = RealFactorioEnv(fast_mode=False, peaceful=False)
     env.reset()
     env.reset()
     assert len(fake_env.instance.post_tool_hooks["move_to"]) == 1
@@ -489,7 +489,7 @@ def test_the_move_to_hook_waits_for_the_walk(monkeypatch):
     from factorio_maxxing.envs import RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
-    RealFactorioEnv(fast_mode=False)
+    RealFactorioEnv(fast_mode=False, peaceful=False)
     queue = iter(["3", "1", "0"])
     fake_env.instance.rcon_client.send_command = lambda command: next(queue)
     monkeypatch.setattr("factorio_maxxing.envs.time.sleep", lambda _: None)
@@ -639,3 +639,77 @@ def test_real_env_satisfies_the_protocol(monkeypatch):
 
     install_fake_fle(monkeypatch, reset_result=({}, {}))
     assert isinstance(RealFactorioEnv(), EnvProtocol)
+
+
+# --- peaceful (D53) -----------------------------------------------------------------
+
+
+def test_peaceful_is_on_by_default_and_applied_after_reset(monkeypatch):
+    from factorio_maxxing.envs import PEACEFUL_LUA, RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv()
+    assert env.peaceful is True
+    assert PEACEFUL_LUA not in fake_env.instance.rcon_client.sent, "not before reset"
+    env.reset()
+    assert fake_env.instance.rcon_client.sent.count(PEACEFUL_LUA) == 1
+
+
+def test_peaceful_is_reapplied_after_every_step(monkeypatch):
+    """Walking generates new ground, and new ground brings new nests."""
+    from factorio_maxxing.envs import PEACEFUL_LUA, RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv()
+    env.reset()
+    env.step(Action(code="move_to(Position(x=500, y=0))"))
+    env.step(Action(code="x = 1"))
+    assert fake_env.instance.rcon_client.sent.count(PEACEFUL_LUA) == 3
+
+
+def test_peaceful_still_returns_the_step_result(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv()
+    assert env.step(Action(code="x = 1")) == (
+        {"inventory": {}},
+        1.5,
+        False,
+        True,
+        {"note": "ok"},
+    )
+
+
+def test_peaceful_off_sends_nothing(monkeypatch):
+    from factorio_maxxing.envs import PEACEFUL_LUA, RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    env = RealFactorioEnv(peaceful=False)
+    env.reset()
+    env.step(Action(code="x = 1"))
+    assert PEACEFUL_LUA not in fake_env.instance.rcon_client.sent
+
+
+def test_a_failed_enemy_clear_does_not_lose_the_step(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+
+    def broken(command):
+        raise ConnectionError("rcon dropped")
+
+    env = RealFactorioEnv()
+    fake_env.instance.rcon_client.send_command = broken
+    observation, reward, *_ = env.step(Action(code="x = 1"))
+    assert reward == 1.5
+
+
+def test_peaceful_lua_targets_the_surface_not_a_player():
+    """FLE's own clear indexes game.player, which is nil over RCON (D53)."""
+    from factorio_maxxing.envs import PEACEFUL_LUA
+
+    assert "game.player" not in PEACEFUL_LUA.replace("game.players", "")
+    assert "game.surfaces[1]" in PEACEFUL_LUA
+    assert "peaceful_mode = true" in PEACEFUL_LUA
+    assert 'force = "enemy"' in PEACEFUL_LUA

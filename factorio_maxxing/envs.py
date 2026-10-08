@@ -167,6 +167,26 @@ level 0 so no position is prepended to FLE's own message. Idempotent: a tool FLE
 reloaded is wrapped again, and one already wrapped is left alone."""
 
 
+PEACEFUL_LUA = (
+    "/sc local s = game.surfaces[1] "
+    "s.peaceful_mode = true "
+    "game.map_settings.enemy_expansion.enabled = false "
+    "game.map_settings.enemy_evolution.enabled = false "
+    "local n = 0 "
+    'for _, e in pairs(s.find_entities_filtered{force = "enemy"}) do '
+    "e.destroy() n = n + 1 end "
+    "rcon.print(n)"
+)
+"""Make the world free of enemies, and print how many enemy entities were removed (D53).
+
+FLE's ``peaceful=True`` intends this and does not achieve it: ``remove_enemies()`` runs
+before the start area's chunks are generated and leaves worms, and the per-step
+``background_step()`` FLE's own evaluator calls indexes ``game.player``, which is nil
+over RCON, so it fails silently. This addresses the surface, not a player, removes
+biters, nests and worms alike, and sets ``peaceful_mode`` so that nests in chunks
+generated later - every walk into new ground generates some - do not attack either."""
+
+
 class RealFactorioEnv:
     """Adapter over FLE's ``FactorioGymEnv``, satisfying ``EnvProtocol``.
 
@@ -209,6 +229,13 @@ class RealFactorioEnv:
     errors or wander off. It still
     changes what the agent sees - a slow ``move_to`` returns where the walk *started* -
     so it is for watching, never for measurement (D48).
+
+    ``peaceful`` defaults on, which is what FLE's own ``peaceful=True`` intends: no
+    enemies. FLE does not deliver it - the live map held 2,052 biters, 919 nests and
+    1,119 worms, the nearest 170 tiles from spawn - and an agent that walked into them
+    died with its whole inventory, invisibly to itself and the verifier. Enemies are
+    removed after every reset and every step, since walking generates new ground with
+    new nests in it (D53).
     """
 
     def __init__(
@@ -221,6 +248,7 @@ class RealFactorioEnv:
         starting_inventory: Mapping[str, int] | None = None,
         game_speed: float | None = None,
         fast_mode: bool = True,
+        peaceful: bool = True,
     ):
         from fle.env.gym_env.action import Action as FLEAction
         from fle.env.gym_env.registry import (
@@ -239,6 +267,7 @@ class RealFactorioEnv:
         self.task_key = task_key
         self.game_speed = game_speed
         self.fast_mode = fast_mode
+        self.peaceful = peaceful
         self.pause_after_action = pause_after_action
         self.starting_inventory = dict(starting_inventory or {})
         self._fle_action = FLEAction
@@ -253,6 +282,22 @@ class RealFactorioEnv:
         self._force_unpause()
         self._apply_speed()
         self._apply_fast_mode()
+
+    def _apply_peaceful(self) -> None:
+        """Remove every enemy and keep new ones passive (D53). Logs what it removed.
+
+        A failure is logged, not raised: a step that has already run must not be lost
+        because the cleanup after it could not reach the server.
+        """
+        if not self.peaceful:
+            return
+        try:
+            removed = self._env.instance.rcon_client.send_command(PEACEFUL_LUA)
+        except Exception as error:  # noqa: BLE001 - any transport failure is non-fatal
+            logging.warning("could not clear enemies: %s", error)
+            return
+        if str(removed or "").strip() not in ("", "0"):
+            logging.info("cleared %s enemy entities", str(removed).strip())
 
     def _apply_fast_mode(self) -> None:
         """Make the agent walk, and change nothing else (D48 and its correction).
@@ -336,6 +381,7 @@ class RealFactorioEnv:
         observation = result[0] if isinstance(result, tuple) else result
         self._apply_speed()
         self._apply_fast_mode()
+        self._apply_peaceful()
         if self.starting_inventory:
             observation = self._stock_inventory()
         return observation
@@ -369,10 +415,15 @@ class RealFactorioEnv:
         FLE's ``step`` asserts ``isinstance(action, Action)`` against its own class, so
         a structurally identical object will not do. ``game_state`` is left unset:
         checkpoint and restore is future scope (D15).
+
+        Enemies are cleared after the step, because the step's walking may have
+        generated new ground with new nests in it (D53).
         """
-        return self._env.step(
+        result = self._env.step(
             self._fle_action(code=action.code, agent_idx=action.agent_idx)
         )
+        self._apply_peaceful()
+        return result
 
     def close(self) -> None:
         """Release the Factorio instance. Not part of EnvProtocol; run.py calls it."""

@@ -1695,3 +1695,44 @@ not cached: its content changes every step.
 the recorded state (drills and furnace `WORKING`, plates in inventory; copper and gears
 in inventory), so neither result depends on this change. Every live result must name its
 verifier model beside its policy model.
+
+---
+
+## D53 - The live world is made peaceful after every reset and step
+
+**Decision (research lead).** `RealFactorioEnv` takes `peaceful`, default `True`, carried
+by a config key of the same name. When on, it removes every enemy entity - biters, nests
+and worms - sets `peaceful_mode` on the surface and disables expansion and evolution,
+after every `reset()` and every `step()`. A failed clear is logged, never raised: a step
+that has run must not be lost to its cleanup.
+
+**Finding, measured 2026-10-08.** Goal-5 rehearsal 3 (`20261008T173757-5292519e`) lost
+its entire inventory at step 48. The agent had misread "Could not place lab" - it never
+crafted one - as a full inventory, and walked to (-2000, -2000) to discard items. It was
+**killed by biters** there: the corpse held 20 automation science packs, 3 drills, 12
+gears and 30 copper cable, and the enemy force's kill statistics showed one character.
+The step then ran into FLE's 120 s evaluation timeout. Nothing in the observation said
+the agent had died, so neither the policy nor the verifier could know.
+
+**Why the default is on.** It is FLE's stated intent: `peaceful=True` is
+`FactorioInstance`'s default, and FLE's evaluator clears enemies after every step "to
+prevent interference". Neither mechanism works - the startup clear runs before the start
+area is generated and spares worms, and the per-step clear indexes `game.player`, nil
+over RCON - so the live map held 4,090 enemy entities, the nearest ~170 tiles from
+spawn. The harness now delivers what FLE promises. Combat is not part of the research
+question; an agent losing its inventory to an unreported death is a confound, not a
+measurement.
+
+**Why every step.** Walking generates new ground, and new ground brings new nests:
+generating chunks at (3000, 3000) created 374 enemy entities, removed by the next pass.
+`peaceful_mode` covers the gap between steps, since nests generated mid-step do not
+attack unprovoked. A pass costs 0.05 s on a clean map.
+
+**Comparability.** Goals 3 and 4 and rehearsals 1-2 never met enemies - their agents
+stayed near spawn - so no earlier result depends on this. Rehearsal 3 is a run in which
+the environment, not the agent, ended the climb, and is reported as such. The setting
+belongs beside the starting inventory (D40) in any reported result.
+
+**Not addressed.** FLE's timeout cannot stop a running program (`future.cancel()` on a
+running future is a no-op), so a timed-out program keeps executing beside the next step.
+Recorded in `docs/fle-integration.md`; not fixed here.
