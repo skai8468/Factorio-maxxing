@@ -151,6 +151,12 @@ class Config:
 
     False is FLE's slow mode: the character visibly walks. It changes what the agent's
     tools return, so it is for watching a run, never for measuring one (D48)."""
+    step_timeout: float | None = None
+    """Seconds FLE may spend executing one step. Live only. None keeps FLE's 120.
+
+    At 1x a step that harvests and sleeps can outlive 120 s, and FLE's timeout cannot
+    stop a running step - it keeps executing beside the next one (D53, D58). Watched
+    runs at 1x set it higher; measured runs at 10x keep FLE's."""
     peaceful: bool = True
     """Remove all enemies after every reset and step. Live only.
 
@@ -250,6 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="game speed for a live run; 1 lets a game client keep up (FLE uses 10)",
     )
     parser.add_argument(
+        "--step-timeout",
+        type=float,
+        help="seconds FLE may spend on one step (FLE uses 120)",
+    )
+    parser.add_argument(
         "--slow",
         action="store_true",
         help="FLE's slow mode, so the agent walks instead of teleporting (watching only)",
@@ -282,6 +293,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "enable_vision": True if args.vision else None,
         "game_speed": args.game_speed,
         "fast_mode": False if args.slow else None,
+        "step_timeout": args.step_timeout,
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
@@ -313,6 +325,7 @@ def _build_live_environment(config: Config) -> EnvProtocol:
             game_speed=config.game_speed,
             fast_mode=config.fast_mode,
             peaceful=config.peaceful,
+            step_timeout=config.step_timeout,
         )
     except ImportError as exc:
         raise ConfigError(

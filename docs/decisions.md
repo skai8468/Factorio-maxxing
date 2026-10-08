@@ -1862,3 +1862,42 @@ Flushing at the prompt makes a prompt wait for what is typed *at* it.
 run the agent had been unassisted without anyone choosing it; the trajectory records
 those prompts as declines, which is true of what the agent received and false of the
 operator's intent. That run is reported with this caveat.
+
+---
+
+## D58 - Slow walks recover from obstacles, steps get a configurable timeout, and fast runs clear slow leftovers
+
+**Decision (research lead).** Three changes to `RealFactorioEnv`, all from Demo 1's
+failed attempts on 2026-10-09:
+
+- **Stuck walks are finished at the destination.** The slow-mode walk-wait reads the
+  queue length *and* the agent's position each poll. A walk that stands still for
+  `STUCK_AFTER` (3 s) with path left is cleared with FLE's own `clear_walking_queue`,
+  and the agent teleported to the walk's last path point - or the nearest free spot -
+  as fast mode would have placed it. The program that called `move_to` carries on.
+- **`step_timeout`**, a config key and `--step-timeout` flag. FLE's `step()` hard-codes
+  `instance.eval(..., timeout=120)`; when set, the instance's `eval` is wrapped once to
+  substitute the configured value, so no FLE file is patched. `None` keeps FLE's 120.
+- **Fast-mode runs clear slow-mode leftovers** at construction and after every reset:
+  the 5-tick walking handler is unregistered, the walking queues emptied and the agent
+  stopped (`CLEAR_SLOW_LEFTOVERS_LUA`).
+
+**Findings.**
+
+1. *Attempt 1 (slow mode):* the agent walked into a big rock at (20, -83) and stood there,
+   still "walking", with 85 path points queued. The walk-wait outlived FLE's 120 s step
+   timeout; FLE's timeout cannot stop a running step (D53), so the wait kept polling RCON
+   while the next step started on the same client, and `factorio_rcon` raised
+   `ClientBusy`, killing the run.
+2. *Attempt 2 (fast mode):* the game still held `storage.fast = false` from attempt 1.
+   FLE registers its walking handler when its tools load under that flag, then sets the
+   flag to true. The handler kept the new agent walking on its own - it began step 0
+   326 tiles from spawn - until the run was stopped and the leftovers cleared by hand.
+3. *Attempt 3 (fast mode, 1x):* steps 30 and 45 outlived 120 s - harvesting 100 ore at 1x
+   and then `sleep(60)` - and after the first of them the help prompt stopped reading
+   input (D57).
+
+**Why these are safe.** The 5-tick handler is FLE's walking handler alone - no other FLE
+tool uses that period - so a fast run loses nothing by unregistering it. A recovered
+walk ends where fast mode would have put the agent. `step_timeout` changes how long a
+step may take, not what it does; measured runs at 10x keep FLE's 120.

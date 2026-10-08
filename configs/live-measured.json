@@ -20,6 +20,7 @@
   "game_speed": null,
   "fast_mode": true,
   "peaceful": true,
+  "step_timeout": null,
   "trajectory_dir": "trajectories",
   "api_reference": "configs/fle_api_reference.md"
 }

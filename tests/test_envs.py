@@ -196,6 +196,10 @@ class _FakeInstance:
     def set_speed(self, speed):
         self.speeds_set.append(speed)
 
+    def eval(self, expr, agent_idx=0, timeout=60):
+        self.eval_timeouts = getattr(self, "eval_timeouts", []) + [timeout]
+        return 0.0, 0.0, ""
+
     def unpause(self):
         self.unpause_calls += 1
         if self._is_paused:
@@ -439,12 +443,13 @@ def test_a_non_positive_game_speed_is_refused(monkeypatch, speed):
 
 
 def test_fast_mode_is_fles_own_by_default(monkeypatch):
-    from factorio_maxxing.envs import RealFactorioEnv
+    from factorio_maxxing.envs import CLEAR_SLOW_LEFTOVERS_LUA, RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
     RealFactorioEnv(peaceful=False).reset()
     assert fake_env.instance.fast is True
-    assert fake_env.instance.rcon_client.sent == []
+    # Only the slow-mode cleanup is sent, at construction and after reset (D58).
+    assert fake_env.instance.rcon_client.sent == [CLEAR_SLOW_LEFTOVERS_LUA] * 2
     assert fake_env.instance.post_tool_hooks == {}
 
 
@@ -713,3 +718,82 @@ def test_peaceful_lua_targets_the_surface_not_a_player():
     assert "game.surfaces[1]" in PEACEFUL_LUA
     assert "peaceful_mode = true" in PEACEFUL_LUA
     assert 'force = "enemy"' in PEACEFUL_LUA
+
+
+# --- step timeout, stuck walks and slow-mode leftovers (D58) ------------------------
+
+
+def test_no_step_timeout_leaves_fles_eval_alone(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    original = fake_env.instance.eval
+    RealFactorioEnv(peaceful=False)
+    assert fake_env.instance.eval == original
+
+
+def test_a_step_timeout_replaces_fles_hard_coded_120(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(peaceful=False, step_timeout=600)
+    fake_env.instance.eval("x = 1", agent_idx=0, timeout=120)
+    assert fake_env.instance.eval_timeouts == [600]
+
+
+def test_a_non_positive_step_timeout_is_refused(monkeypatch):
+    from factorio_maxxing.envs import RealFactorioEnv
+
+    install_fake_fle(monkeypatch, reset_result=({}, {}))
+    with pytest.raises(ValueError, match="step_timeout"):
+        RealFactorioEnv(step_timeout=0)
+
+
+def test_fast_mode_clears_a_walking_handler_left_by_a_slow_run():
+    """Measured live: FLE re-registered it and the new agent walked off on its own."""
+    from factorio_maxxing.envs import CLEAR_SLOW_LEFTOVERS_LUA
+
+    assert "script.on_nth_tick(5, nil)" in CLEAR_SLOW_LEFTOVERS_LUA
+    assert "storage.walking_queues = {}" in CLEAR_SLOW_LEFTOVERS_LUA
+    assert "walking = false" in CLEAR_SLOW_LEFTOVERS_LUA
+
+
+def test_slow_mode_does_not_clear_its_own_walking_handler(monkeypatch):
+    from factorio_maxxing.envs import CLEAR_SLOW_LEFTOVERS_LUA, RealFactorioEnv
+
+    fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
+    RealFactorioEnv(fast_mode=False, peaceful=False).reset()
+    assert CLEAR_SLOW_LEFTOVERS_LUA not in fake_env.instance.rcon_client.sent
+
+
+def test_a_walk_that_stops_moving_is_finished_at_its_destination():
+    from factorio_maxxing.envs import wait_for_walk
+
+    replies = iter(["85 19.61 -82.48"] * 10)
+    sent = []
+    now = iter([0.0, 0.0, 1.0, 2.0, 3.5, 4.0])
+
+    def send(command):
+        sent.append(command)
+        if "clear_walking_queue" in command:
+            return ""
+        return next(replies)
+
+    assert wait_for_walk(send, 1, sleep=lambda _: None, clock=lambda: next(now)) is True
+    assert "clear_walking_queue(i)" in sent[-1]
+    assert "teleport" in sent[-1]
+
+
+def test_a_walk_that_keeps_moving_is_never_declared_stuck():
+    from factorio_maxxing.envs import wait_for_walk
+
+    replies = iter(["3 0 0", "2 2 0", "1 4 0", "0"])
+    sent = []
+    now = iter(float(i) for i in range(20))
+
+    def send(command):
+        sent.append(command)
+        return next(replies)
+
+    assert wait_for_walk(send, 1, sleep=lambda _: None, clock=lambda: next(now)) is True
+    assert not [c for c in sent if "clear_walking_queue" in c]

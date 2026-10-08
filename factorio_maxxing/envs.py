@@ -112,6 +112,43 @@ WALK_TIMEOUT = 120.0
 """Seconds ``move_to`` may wait for a walk to finish before giving up. A long walk at 1x
 is tens of seconds; this only exists so a stuck queue cannot hang a run."""
 
+STUCK_AFTER = 3.0
+"""Seconds a walking character may stand still, with path left to walk, before the walk
+is declared stuck and recovered (D58). Measured live: a character walked into a big rock
+and stood there, still "walking", with 85 path points queued."""
+
+
+def _walk_query(player_index: int) -> str:
+    """One RCON round trip: queue length, then the agent's position."""
+    return (
+        f"/sc local q = storage.actions.get_walking_queue_length({player_index}) "
+        f"local c = storage.agent_characters "
+        f"and storage.agent_characters[{player_index}] "
+        "if c and c.valid then "
+        "rcon.print(q .. ' ' .. c.position.x .. ' ' .. c.position.y) "
+        "else rcon.print(q) end"
+    )
+
+
+def _unstick_lua(player_index: int) -> str:
+    """Finish a stuck walk the way fast mode would: at the destination.
+
+    Clears the queue with FLE's own helper, stops the walking animation, and teleports
+    the agent to the walk's last path point - or the nearest free spot beside it - so
+    the program that called ``move_to`` carries on from where it asked to be.
+    """
+    return (
+        f"/sc local i = {player_index} "
+        "local c = storage.agent_characters and storage.agent_characters[i] "
+        "if not (c and c.valid) then return end "
+        "local q = storage.walking_queues and storage.walking_queues[i] "
+        "local dest = q and (q.positions[#q.positions] or q.current_target) "
+        "storage.actions.clear_walking_queue(i) "
+        "c.walking_state = {walking = false, direction = defines.direction.north} "
+        "if dest then c.teleport(c.surface.find_non_colliding_position("
+        "'character', dest, 10, 0.5) or dest) end"
+    )
+
 
 def wait_for_walk(
     send: Callable[[str], object],
@@ -119,6 +156,7 @@ def wait_for_walk(
     *,
     poll: float = 0.25,
     timeout: float = WALK_TIMEOUT,
+    stuck_after: float = STUCK_AFTER,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
 ) -> bool:
@@ -128,14 +166,34 @@ def wait_for_walk(
     behind its Python-side slow flag, which also swallows placement errors and makes
     harvesting walk off after more ore - so the Python side stays fast and this is
     hooked onto ``move_to`` instead (D48 correction).
+
+    A walk that stops moving for ``stuck_after`` seconds with path still queued is
+    recovered: the agent is teleported to the destination and the queue cleared, as fast
+    mode would have done, and the wait ends (D58). Without it a character pressed
+    against a rock waits out ``timeout`` and then FLE's own step timeout, and the step
+    keeps running after FLE gives up on it.
     """
-    command = f"/sc rcon.print(storage.actions.get_walking_queue_length({player_index}))"
+    command = _walk_query(player_index)
     deadline = clock() + timeout
-    while str(send(command)).strip() not in ("0", ""):
-        if clock() >= deadline:
+    last_position = None
+    still_since = clock()
+    while True:
+        fields = str(send(command)).split()
+        if not fields or fields[0] == "0":
+            return True
+        now = clock()
+        position = (
+            tuple(round(float(v), 1) for v in fields[1:3]) if len(fields) >= 3 else None
+        )
+        if position is None or position != last_position:
+            last_position, still_since = position, now
+        elif now - still_since >= stuck_after:
+            logging.warning("walk stuck at %s; finishing it at the destination", position)
+            send(_unstick_lua(player_index))
+            return True
+        if now >= deadline:
             return False
         sleep(poll)
-    return True
 
 
 FAST_ACTIONS_LUA = " ".join(
@@ -165,6 +223,23 @@ FLE reads the flag at call time and looks the action up at call time too, so a w
 changes the behaviour without patching FLE's files. Errors pass through unchanged, with
 level 0 so no position is prepended to FLE's own message. Idempotent: a tool FLE has
 reloaded is wrapped again, and one already wrapped is left alone."""
+
+
+CLEAR_SLOW_LEFTOVERS_LUA = (
+    "/sc script.on_nth_tick(5, nil) "
+    "storage.walking_queues = {} "
+    "for _, c in pairs(storage.agent_characters or {}) do "
+    "if c.valid then "
+    "c.walking_state = {walking = false, direction = defines.direction.north} "
+    "end end"
+)
+"""Undo what an earlier slow-mode run left in the game, for a fast-mode run (D58).
+
+FLE registers its walking handler when its tools load while ``storage.fast`` is false -
+which an earlier slow-mode run leaves behind - and then sets the flag to true. Measured
+live: the handler then kept the new agent walking on its own, out of control, from its
+first step. The 5-tick handler is FLE's walking handler alone (``move_to/server.lua``;
+no other FLE tool uses that period), so unregistering it costs a fast-mode run nothing."""
 
 
 PEACEFUL_LUA = (
@@ -249,6 +324,7 @@ class RealFactorioEnv:
         game_speed: float | None = None,
         fast_mode: bool = True,
         peaceful: bool = True,
+        step_timeout: float | None = None,
     ):
         from fle.env.gym_env.action import Action as FLEAction
         from fle.env.gym_env.registry import (
@@ -263,11 +339,14 @@ class RealFactorioEnv:
         info["enable_vision"] = enable_vision
         if game_speed is not None and game_speed <= 0:
             raise ValueError(f"game_speed must be positive, got {game_speed}")
+        if step_timeout is not None and step_timeout <= 0:
+            raise ValueError(f"step_timeout must be positive, got {step_timeout}")
 
         self.task_key = task_key
         self.game_speed = game_speed
         self.fast_mode = fast_mode
         self.peaceful = peaceful
+        self.step_timeout = step_timeout
         self.pause_after_action = pause_after_action
         self.starting_inventory = dict(starting_inventory or {})
         self._fle_action = FLEAction
@@ -282,6 +361,29 @@ class RealFactorioEnv:
         self._force_unpause()
         self._apply_speed()
         self._apply_fast_mode()
+        self._apply_step_timeout()
+
+    def _apply_step_timeout(self) -> None:
+        """Give each step ``step_timeout`` seconds instead of FLE's hard-coded 120 (D58).
+
+        FLE's ``step()`` calls ``instance.eval(code, agent_idx=..., timeout=120)``. The
+        instance's ``eval`` is wrapped once to substitute the configured timeout, so no
+        FLE file is patched. At 1x a step that harvests 100 ore and sleeps 60 s outlives
+        120 s, and FLE's timeout cannot stop a running step: it keeps executing beside
+        the next one. Measured live, every help prompt after the first timeout then
+        declined itself.
+        """
+        if self.step_timeout is None:
+            return
+        instance = self._env.instance
+        original = getattr(instance, "_harness_original_eval", None) or instance.eval
+        instance._harness_original_eval = original
+        step_timeout = self.step_timeout
+
+        def eval_with_step_timeout(expr, agent_idx=0, timeout=60):
+            return original(expr, agent_idx=agent_idx, timeout=step_timeout)
+
+        instance.eval = eval_with_step_timeout
 
     def _apply_peaceful(self) -> None:
         """Remove every enemy and keep new ones passive (D53). Logs what it removed.
@@ -315,6 +417,9 @@ class RealFactorioEnv:
         Re-applied after reset, where it is harmless; the hook is added once.
         """
         if self.fast_mode:
+            instance = getattr(self._env, "instance", None)
+            if instance is not None:
+                instance.rcon_client.send_command(CLEAR_SLOW_LEFTOVERS_LUA)
             return
         instance = self._env.instance
         instance.rcon_client.send_command("/sc storage.fast = false")
