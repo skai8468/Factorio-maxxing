@@ -1936,3 +1936,69 @@ D47's did. In fast mode the agent itself teleports, and the view jumps with it.
 **What it does not change.** As D45 and D47: nothing is written to `storage`, no entity
 but the watching player moves, and no FLE tool reads a connected player. D47's
 lock-out is kept unchanged.
+
+---
+
+## D60 - Research question pivot: human guidance as a way to close the model gap
+
+**Decision (research lead, 2026-10-16).** The research question changes:
+
+- *Was:* "How much human assistance does an LLM agent need to climb the Factorio
+  technology tree, and can harness engineering reduce that requirement?"
+- *Now:* "How much human guidance does a budget LLM need to reach frontier-model
+  performance in Factorio, and how much of that guidance can harness engineering
+  replace?"
+
+The experiment is a 2×2×2 grid at an equal dollar budget $X per run
+(`build-plan.md` §5a):
+
+| | Standard, no human | Standard + human | Specialized + human | Specialized, no human |
+|---|---|---|---|---|
+| Frontier | 1 | 2 | 3 | 4 |
+| Budget | 5 | 6 | 7 | 8 |
+
+A catalogue of the errors agents make when stuck, and of the guidance that unsticks
+them, is a required output (§5b).
+
+**Chosen by the research lead.**
+
+1. *The standard harness is the M1 harness*, as at the `m1-complete` tag. The
+   specialized harness is new engineering on top of it.
+2. *Progress is an ordered milestone ladder scored from recorded FLE state* (§5d), not
+   the LLM verifier, which was fooled twice on goal 5 (D49, D52). Production score is
+   secondary.
+3. *The human speaks only when the harness asks* - the §2 definition is unchanged.
+   Better stuck detection therefore belongs to the harness being tested.
+4. *M0 and M1 are complete.* M1's evidence is the goal-5 rehearsal
+   `20261008T180209-c4fb9b83`: automation researched in the recorded state, three
+   harness-triggered verbatim interventions. Demo 1 is optional and off the critical
+   path.
+
+**Defaults written into the plan (open to the research lead's override).**
+
+- *The verifier uses the policy's model in every eval run*, and its tokens count toward
+  $X. The measured configuration until now paired a Haiku policy with a Sonnet
+  verifier (D52); in a budget-model run that would be frontier help leaking into the
+  cell.
+- *Equal dollars, not equal steps.* The comparison is cost-matched on purpose, so the
+  budget model gets more steps. Human effort is a separate currency - count,
+  characters, category, time to answer - because it has no dollar price.
+- *The budget stop derives spend at runtime* from raw tokens and the pricing table
+  (D55). No trajectory stores a dollar figure; the invariant stands.
+- *The headline metric is gap closure*: (run 6 or 7 - run 5) / (run 1 - run 5), on
+  highest milestone.
+- *Human-bias controls* (§5c): a written guidance protocol before E1, alternating
+  which model is guided first, time logged per answer. `ScriptedHuman` replay is
+  secondary, because the goal-5 replay did not reproduce.
+
+**What it supersedes.** The M2 / M3a / M3b / M4 ladder and the autonomous goal manager
+are dropped; phases E0-E4 replace them (§4). The §25 goal progression stays as the
+record of how M0/M1 were tested. "Do not build experiment infrastructure" is lifted
+(§18). Specialized-harness features - memory, skill library, repair strategies,
+Factorio-specific stuck detectors - are admitted from E2, each switchable and tied to a
+catalogued error category. `GameState` checkpointing stays out. A `Scorer` joins the
+invariants: it computes milestones from recorded state and never drives control flow.
+
+**Left to the research lead.** Frontier and budget models (and any extra rows), $X,
+seeds per run (≥3 recommended), the final milestone ladder, and whether runs 3 and 4
+keep the standard stuck detector or use an improved one.

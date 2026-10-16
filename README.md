@@ -2,8 +2,8 @@
 
 Human-Assisted Factorio Harness (FYP).
 
-> How much human assistance does an LLM agent need to climb the Factorio technology
-> tree, and can harness engineering reduce that requirement?
+> How much human guidance does a budget LLM need to reach frontier-model performance in
+> Factorio, and how much of that guidance can harness engineering replace?
 
 See `docs/build-plan.md` for scope, milestones, and build order. `CLAUDE.md` holds the
 project-wide rules and architecture invariants.

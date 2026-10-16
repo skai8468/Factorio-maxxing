@@ -6,10 +6,22 @@
 
 ## 1. Thesis
 
-> **How much human assistance does an LLM agent need to climb the Factorio technology
-> tree, and can harness engineering reduce that requirement?**
+> **How much human guidance does a budget LLM need to reach frontier-model performance
+> in Factorio, and how much of that guidance can harness engineering replace?**
+
+*Superseded thesis (research lead, 2026-10-16, `decisions.md` D60): "How much human
+assistance does an LLM agent need to climb the Factorio technology tree, and can harness
+engineering reduce that requirement?"*
 
 Human assistance is a **first-class component of the loop**, not a fallback.
+
+The evaluation grid (§5a) splits the thesis into three measurable questions:
+
+| | Question | Comparison |
+|---|---|---|
+| (a) | How large is the gap between a frontier and a budget model? | run 1 vs run 5 |
+| (b) | **Does human guidance close it?** — the headline | runs 6, 7 vs run 1 |
+| (c) | Can harness engineering substitute for the human? | run 8 vs runs 6 and 1 · run 4 vs run 2 |
 
 **Why the environment is hard.** FLE's leaderboard, at 5000 autonomous steps:
 
@@ -32,74 +44,163 @@ human textual assistance targets. No 2026-generation model has published FLE res
 
 The human **never** plays Factorio, **never** executes actions, and provides **only**
 textual knowledge. Intervention text is recorded **verbatim** and is the source of
-truth. Optional later classification (`KNOWLEDGE` / `DIAGNOSIS` / `PLANNING` /
-`CORRECTION`) is an additional field only — it must never affect M0/M1 control flow or
-replace the raw text.
+truth. The human speaks **only when the harness asks** — better stuck detection is
+therefore a property of the harness under test (D60).
+
+Every stuck event, answered or not, receives a **post-hoc annotation** (§5b). This is
+required, not optional, but it is an additional record only: it is stored apart from
+the trajectory, never read by control flow, and never replaces the raw text.
 
 ## 3. Scope
 
-**Current — implement now:** M0, M1, offline mock, real FLE integration, human
-intervention machinery, policy/verifier model separation, trajectory and cost
-instrumentation.
+**Complete:** M0, M1 (tags `m0-complete`, `m1-complete`). M1's evidence is the
+goal-5 rehearsal `20261008T180209-c4fb9b83`: *Research automation* completed live, with
+three harness-triggered, verbatim interventions, the recorded state confirming the
+verifier.
 
-**Future — do not implement:** M2, M3a, M3b, M4, autonomous goal manager, autonomous
-tech-tree planning, repair strategies, skill library, `GameState` checkpointing,
-evaluation/ablation framework, advanced Factorio-specific stuck detectors.
+**Current — implement now:** **E0** (§4).
 
-The architecture must make these possible later. Create an interface or extension point
-only where genuinely necessary; do not prematurely build the feature.
+**Future, in order:** E1 → E2 → E3 → E4.
 
-## 4. Milestone ladder
+**Dropped** (D60): M2 goal sequences, M3a/M3b technology selection, M4, the autonomous
+goal manager, autonomous tech-tree planning. The open-ended goal and the milestone
+ladder replace them as the measure of how far an agent gets.
 
-| | Milestone | Question |
-|---|---|---|
-| **M0** | Goal → policy → Python → FLE → observation → verification | Can the harness execute a goal autonomously? |
-| **M1** | + stuck detection → human guidance → policy continues | Can a human rescue an otherwise-stuck agent without controlling the game? |
-| M2 | Goal sequences | Can it execute a sequence of goals? |
-| M3a | Human-selected technology objectives | Can it execute a human-chosen tech objective? |
-| M3b | Harness selects next objective | Can it choose its own objective? |
-| M4 | Full system | See below |
+**Allowed only from E2:** specialized-harness features — memory, skill library, repair
+strategies, decomposition aids, Factorio-specific stuck detectors and the like. Each
+must be a switchable feature, off in the standard harness, and should target an error
+category from the catalogue (§5b). `GameState` checkpointing stays out of scope unless
+the research lead admits it.
 
-**M1 is the first meaningful research system**, not merely a fallback feature. M0 alone
-approximates existing work; M1 is where the project's question becomes measurable.
+The architecture must make later phases possible. Create an interface or extension
+point only where genuinely necessary; do not build a phase before its turn.
 
-**M3b is the major difficulty jump** — autonomous technology selection reintroduces the
-long-horizon planning that the leaderboard shows models fail at. M3a de-risks it by
-separating *executing* an objective from *choosing* one.
+## 4. Phase ladder
 
-**M4, concretely** — not "play Factorio":
-> Given a fresh Factorio world and a high-level instruction to climb the technology
-> tree, the harness repeatedly achieves increasingly difficult technology objectives,
-> requests human textual assistance when stuck, incorporates that guidance, and records
-> progression until a configured endpoint or budget is reached.
+| | Phase | Delivers | Done when |
+|---|---|---|---|
+| **M0** ✓ | Autonomous loop | Goal → policy → Python → FLE → observation → verification | — |
+| **M1** ✓ | Human rescue | + stuck detection → human guidance → policy continues | — |
+| **E0** | Eval scaffolding | Open-ended goal ("progress as far as you can") · objective milestone **Scorer** · **$X budget stop** · annotation schema · one run config per grid cell | A live run stops at $X and its milestones are scored from recorded state |
+| **E1** | Standard-harness pilot | Runs 1, 2, 5, 6 at small n · first error catalogue · codebook v1 · guidance protocol in use | Every stuck event in the pilot is annotated |
+| **E2** | Specialized harness | Features chosen from the E1 catalogue, each switchable | Each feature has tests and a pilot run |
+| **E3** | Full grid | All 8 runs × n seeds | Every run recorded and annotated |
+| **E4** | Analysis | Gap closure · catalogue write-up · cost and human-effort tables | Results tables regenerate from trajectories and annotations |
 
-Budgets are explicit: deepest technology, max steps, max interventions, max API spend.
-The project does not promise a rocket launch ahead of results.
+**M1 was the first meaningful research system**; E0–E4 turn it into the experiment.
+The catalogue from E1 decides what the specialized harness contains, so E2's design is
+driven by observed failures rather than guessed in advance.
+
+Budgets are explicit: dollar budget $X per run (the binding limit), plus a step ceiling
+as a safety net. The project does not promise a rocket launch ahead of results.
 
 ## 5. Metrics
 
-**Primary capability metric — tech-tree depth** (deepest technology reached). Becomes
-measurable at M3a; at M0/M1 its stand-in is **goal success rate**, since current scope
-does not touch the tech tree.
+**Primary capability metric — highest milestone reached** on the §5d ladder, computed
+by the Scorer from recorded FLE state, never from the verifier. Secondary: FLE
+production score · research count · steps and spend to each milestone.
 
-**Primary human-assistance metric — interventions required.**
+**Primary human-assistance metric — interventions**, read with: interventions
+requested vs answered · characters of guidance · guidance category · human time per
+answer.
 
-**Normalised — interventions per technology milestone** (per successful goal at M0/M1).
+**Headline — gap closure**, on highest milestone:
 
-**Goal success rate is reported separately per human backend.** The delta between
-`NoHuman` and `InteractiveHuman` over the same goal set *is* the M1 result — e.g.
-*"M0 solves 2/5 goals autonomously; with human assistance the harness solves 4/5,
-requiring 6 interventions."* Both backends must therefore be run over an identical goal
-set for the comparison to mean anything.
+```
+gap closure = (budget model with human − budget model alone)
+            / (frontier model alone − budget model alone)
+            = (run 6 or 7 − run 5) / (run 1 − run 5)
+```
 
-Intervention count alone is insufficient: an agent needing zero interventions but making
-no progress is not better than one needing several and advancing. Capability and
-assistance metrics are always read as a pair.
+1.0 means the budget model with guidance matches the frontier model without it; above
+1.0, it exceeds it. Undefined when run 1 ≤ run 5 — itself a reportable result.
 
-**Also recorded:** goals succeeded/failed · steps per goal · intervention frequency over
-time · intervention classification · verifier verdict vs objective FLE state ·
-input/output/cache-read/cache-write tokens · latency · execution error taxonomy
-(assertion / code / environment) · cost derived later from raw token counts.
+Capability and assistance are always read as a pair: an agent needing zero
+interventions but making no progress is not better than one needing several and
+advancing.
+
+**Cost.** Store raw tokens only. Dollars are derived from one pricing table — at
+analysis time for reporting, and at runtime for the budget stop. No trajectory stores
+a dollar figure.
+
+**Also recorded:** steps per milestone · intervention timing · verifier verdict vs
+objective FLE state · input/output/cache-read/cache-write tokens · latency · execution
+error taxonomy (assertion / code / environment).
+
+## 5a. Evaluation grid
+
+| | Standard, no human | Standard + human | Specialized + human | Specialized, no human |
+|---|---|---|---|---|
+| **Frontier model** | 1 | 2 | 3 | 4 |
+| **Budget model** | 5 | 6 | 7 | 8 |
+
+- **Standard harness** = the M1 harness as it stands at the `m1-complete` tag.
+  **Specialized harness** = the standard harness plus the E2 features.
+- **Equal dollars, not equal steps.** Every run gets the same budget $X, so the budget
+  model gets more steps. The comparison is cost-matched by design: it asks whether a
+  cheaper model plus a human matches a dearer model for the same API spend. Human
+  effort is not in dollars and is reported separately (§5).
+- **The verifier uses the policy's model in every run**, and its tokens count toward
+  $X. A frontier verifier in a budget run would be frontier help.
+- **Same world seed and starting inventory** across all eight runs of a seed.
+- Further models are further rows; the grid does not change shape.
+- **TBD — research lead:** frontier model · budget model · extra rows · $X · seeds per
+  run (≥3 recommended; Factorio runs vary widely).
+
+## 5b. Error and guidance catalogue
+
+A required output: what agents get wrong when stuck, and what human text unsticks
+them. One row per stuck event in `annotations/<run_id>.jsonl`, separate from the
+trajectory:
+
+```
+run_id · step · intervention_index · error_category · error_note ·
+guidance_category · unstuck (yes/no, within k steps) · codebook_version
+```
+
+**Error codebook v0:** API misuse · spatial / placement · recipe / tech knowledge ·
+planning / ordering · observation misread · repetition loop · verifier false DONE ·
+environment / infra · other.
+
+**Guidance codebook v0:** `KNOWLEDGE` · `DIAGNOSIS` · `PLANNING` · `CORRECTION` ·
+other.
+
+- Stuck events in no-human runs are annotated too (error fields only): they show what
+  goes wrong when nobody helps.
+- Labelled by hand after each run. LLM pre-labelling is allowed only if a human checks
+  every label.
+- The codebook is revised once, after E1, and every row carries its version.
+
+## 5c. Guidance protocol
+
+The operator is one person who learns across runs; these controls bound that bias.
+
+- **Before E1, write down what a hint may contain** — facts, diagnosis, next sub-goal —
+  and what it may not: code.
+- **Alternate which model is guided first** within each seed, so operator learning is
+  spread across both rows.
+- **Log the time taken to answer each request.**
+- **`ScriptedHuman` replay** of one run's hints against another harness is a secondary
+  analysis only: the goal-5 replay did not reproduce (hint 3 landed at step 29, not 65).
+
+## 5d. Milestone ladder — draft, research lead to confirm
+
+Each milestone is checked by the Scorer from recorded FLE state.
+
+1. Iron ore in inventory
+2. Iron plate smelted
+3. Burner mining drill `WORKING`
+4. Drill → furnace: automated iron plates
+5. Copper plate
+6. Iron gear wheel and electronic circuit crafted
+7. Steam power producing electricity
+8. Lab powered and `WORKING`
+9. `automation` researched
+10. Assembler producing automation science packs
+11. Electric mining drill `WORKING`
+12. `logistics` researched
+13. Logistic science pack produced
+14. … extended toward `plastic-bar`, the deepest item on the FLE leaderboard
 
 ---
 
@@ -108,28 +209,29 @@ input/output/cache-read/cache-write tokens · latency · execution error taxonom
 ## 6. Diagram
 
 ```
-Human: high-level goal
+Human: goal (fixed, or open-ended "progress as far as you can")
         ↓
-   Goal Manager  ──────────────┐   (M3+; human-supplied until then)
-        ↓                      │
-   ContextBuilder              │
-        ↓                      │
-   Policy LLM → Python         │
-        ↓                      │
-      FLE                      │
-        ↓                      │
-   Observation                 │
-     ↙       ↘                 │
- Recorder   Verifier           │
-    ↓          ↓               │
-  JSONL   done? ──yes──────────┘
-             │no
-        StuckDetector
-             │stuck
-        ask_human()
-             ↓
-      guidance → ContextBuilder
+   ContextBuilder  ←──────────────────────┐
+        ↓                                 │
+   Policy LLM → Python                    │
+        ↓                                 │
+      FLE                                 │
+        ↓                                 │
+   Observation                            │
+     ↙       ↘                            │
+ Recorder   Verifier                      │
+    ↓          ↓                          │
+  JSONL   done? ──yes──→ end              │
+    ↓          │no                        │
+ Scorer   StuckDetector                   │
+(offline       │stuck                     │
+ or passive) ask_human() → guidance ──────┘
+
+ budget stop: estimated spend ≥ $X → end      (E0)
+ annotations/<run_id>.jsonl — written by hand after the run, never read by the loop
 ```
+
+The Goal Manager box of the original diagram (M3+) is removed with M3 (D60).
 
 ## 7. Architecture invariants — mandatory
 
@@ -140,8 +242,10 @@ Human: high-level goal
 | **Human** | Provide text only | Execute actions · touch the environment |
 | **Recorder** | Record passively | Determine success |
 | **Policy** | Generate Python actions | Contain model-specific logic |
+| **Scorer** *(E0)* | Compute milestones reached from recorded FLE state | Drive control flow · decide goal completion · read the verifier's verdict |
 
-Policy and verifier models must remain independently configurable.
+Policy and verifier models must remain independently configurable. In eval runs both
+are set to the same model (§5a); configurability is kept for development.
 
 ## 8. Key design decisions
 
@@ -156,6 +260,11 @@ goal costs ~$0.58 on Haiku, so a hundred development runs is ~$58 against ~$6 on
 DeepSeek. That ~$50 saving is not worth the ambiguity: during M0/M1 every failure must
 be attributable primarily to harness or infrastructure problems, not weak model
 capability. No model-specific logic enters the core harness.
+
+**Superseded for the experiment by D60: a frontier row and a budget row.** The eval
+grid (§5a) runs one frontier and one budget model — both TBD by the research lead —
+with further models as further rows. The ladder above still describes development:
+build and debug on Haiku 4.5 so that failures stay attributable to the harness.
 
 **Model access is unrestricted.** `APIFactory.PROVIDERS` is only a `base_url` +
 key-env pair per provider, routed through a generic `AsyncOpenAI` client; model strings
@@ -260,6 +369,7 @@ factorio_maxxing/
     loop.py
     run.py
     watch.py               # live-watching camera, a side channel (D45)
+    scorer.py              # E0: milestones from recorded state (§5d)
 tests/
     test_package.py  test_goal.py  test_envs.py  test_rendering.py
     test_context.py  test_llm.py  test_llm_parsing.py  test_api_client.py
@@ -268,8 +378,9 @@ tests/
     test_loop_offline.py  test_replay.py  test_watch.py
     fixtures/
 configs/harness.example.json
-experiments/configs/       # empty until M1 complete
+experiments/configs/       # E0: one config per grid cell (§5a)
 trajectories/
+annotations/               # E1+: catalogue rows per run (§5b), hand-written
 ```
 
 > **Note — one deviation from the specified file list.** `context.py` is added because
@@ -545,7 +656,12 @@ feat: add CLI
 Branch or tag before major experimental changes. Tag milestones `m0-complete` and
 `m1-complete`. Do not rewrite experimental history.
 
-## 18. Future experiment infrastructure — do not build yet
+## 18. Experiment infrastructure — built in E0 and E3
+
+*Originally "do not build yet". Brought into scope by D60: the evaluation grid (§5a)
+is the experiment, so the runner is built in E0 (one config per cell, budget stop,
+Scorer) and exercised at scale in E3. The parameter list below gains `harness`
+(standard / specialized) and `budget_usd`.*
 
 Architecture must eventually support `model · seed · goal · human backend · stuck
 detector · verification interval · history length` as configurable parameters, so that
@@ -601,6 +717,22 @@ pushed.
 Phases 0–4 need no API key, no Docker, no WSL, no Factorio. **Do not skip to live
 Factorio before the offline loop works.**
 
+Phases 0–5 are complete. The evaluation build order (D60), each step one Compact
+Development Cycle:
+
+**E0** — 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
+fixtures · 20. open-ended goal mode · 21. `budget_usd` stop from raw tokens and the
+pricing table · 22. annotation schema and a validator · 23. one config per grid cell ·
+24. a live run that stops at $X and is scored
+
+**E1** — 25. guidance protocol written · 26. pilot of runs 1, 2, 5, 6 · 27. annotate
+every stuck event · 28. codebook v1
+
+**E2** — 29+. specialized-harness features, one per cycle, each switchable and each
+naming the catalogue category it targets
+
+**E3** — full grid, n seeds · **E4** — analysis
+
 ## 20. Definition of done
 
 **M0 complete** when `Goal → Policy → Python → Mock/FLE → Observation → Verifier →
@@ -610,6 +742,24 @@ DONE` works reliably and is tested.
 StuckDetector → Human → Guidance → Policy` works reliably, and every intervention is
 harness-triggered, textual, recorded verbatim, and fed back into subsequent policy
 context — with the human never executing Factorio actions.
+
+Both are met (tags `m0-complete`, `m1-complete`; evidence in §3).
+
+**E0 complete** when a live run in any grid-cell config stops at its $X budget, its
+milestones are scored from recorded state by a tested Scorer, and an annotation file
+for it validates against the schema.
+
+**E1 complete** when runs 1, 2, 5 and 6 have been piloted under the written guidance
+protocol and every stuck event is annotated under codebook v1.
+
+**E2 complete** when each specialized-harness feature is switchable, tested, piloted,
+and tied to the catalogue category it targets.
+
+**E3 complete** when all eight runs × n seeds are recorded and annotated.
+
+**E4 complete** when the results tables — gap closure, milestones, interventions,
+cost, human effort, catalogue frequencies — regenerate from trajectories and
+annotations alone.
 
 ---
 
@@ -678,7 +828,10 @@ Passes when the loop terminates as completed **and** the recorded trajectory
 independently shows an entity with `status == WORKING` — the passive recorder
 confirming what the verifier claimed.
 
-## 25. M0/M1 goal progression
+## 25. M0/M1 goal progression — complete, superseded by §5d
+
+*Kept as the record of how M0/M1 were tested. For the experiment it is replaced by the
+milestone ladder (§5d), which the open-ended goal climbs in a single run (D60).*
 
 1. Place and operate a burner mining drill
 2. Produce iron plates

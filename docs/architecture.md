@@ -6,28 +6,29 @@ Interfaces and component responsibilities. For *why* these choices were made, se
 ## Loop shape
 
 ```
-Human: high-level goal
+Human: goal (fixed, or open-ended "progress as far as you can")
         ↓
-   Goal Manager  ──────────────┐   (M3+; human-supplied until then)
-        ↓                      │
-   ContextBuilder              │
-        ↓                      │
-   Policy LLM → Python         │
-        ↓                      │
-      FLE / Mock               │
-        ↓                      │
-   Observation                 │
-     ↙       ↘                 │
- Recorder   Verifier           │
-    ↓          ↓               │
-  JSONL   done? ──yes──────────┘
-             │no
-        StuckDetector
-             │stuck
-        ask_human()
-             ↓
-      guidance → ContextBuilder
+   ContextBuilder  ←──────────────────────┐
+        ↓                                 │
+   Policy LLM → Python                    │
+        ↓                                 │
+      FLE / Mock                          │
+        ↓                                 │
+   Observation                            │
+     ↙       ↘                            │
+ Recorder   Verifier                      │
+    ↓          ↓                          │
+  JSONL   done? ──yes──→ end              │
+    ↓          │no                        │
+ Scorer   StuckDetector                   │
+(passive)      │stuck                     │
+          ask_human() → guidance ─────────┘
+
+ budget stop: estimated spend ≥ $X → end      (E0)
+ annotations/<run_id>.jsonl — hand-written after the run, never read by the loop
 ```
+
+The Goal Manager (M3+) was removed with M3 (`decisions.md` D60).
 
 ## Component responsibilities
 
@@ -45,6 +46,8 @@ Human: high-level goal
 | `loop.py` | Control flow, termination, counters | Assemble prompts; format observations |
 | `run.py` | CLI, config loading | Business logic |
 | `watch.py` | Keep a connected client's camera on the agent (D45) | Touch the loop, the recorder or the agent |
+| `scorer.py` *(E0)* | Milestones reached, from recorded FLE state (build-plan §5d) | Drive control flow; decide goal completion; read the verifier |
+| `annotations/` *(E1+)* | Catalogue rows per stuck event (build-plan §5b) | Be read by the loop; replace verbatim guidance |
 
 ## Data flow invariants
 
@@ -57,6 +60,10 @@ Human: high-level goal
 - **Guidance flows one way**: human → recorder (verbatim) and human → context. It never
   reaches the environment.
 - **The loop terminates immediately on `done`**, with no further policy LLM call.
+- **The Scorer, like the Recorder, never drives control flow.** It measures how far a
+  run got from objective state; the verifier's verdict is not an input to it.
+- **The budget stop reads raw tokens through the pricing table** at runtime; the
+  trajectory still stores no dollar figure.
 
 ## Counters (see `decisions.md` D12)
 
@@ -71,8 +78,10 @@ These exist as seams only. **Do not implement the features now.**
 
 | Seam | Future use |
 |---|---|
-| `execute_policy(policy, env)` boundary | Repair strategies (M2+) |
-| `StuckDetector` protocol | Flat-flow, repeated-action, explicit-blocked detectors |
-| `EnvProtocol` | `RealFactorioEnv`, checkpoint/restore via `GameState` |
-| Config file rather than constants | Experiment runner sweeping model/seed/goal/backend |
-| Goal Manager position in the diagram | M3a/M3b technology objective selection |
+| `execute_policy(policy, env)` boundary | Repair strategies (specialized harness, E2) |
+| `StuckDetector` protocol | Flat-flow, repeated-action, explicit-blocked detectors (E2) |
+| `ContextBuilder` | Memory and decomposition aids (specialized harness, E2) |
+| `EnvProtocol` | `RealFactorioEnv`, checkpoint/restore via `GameState` (out of scope) |
+| Config file rather than constants | Experiment runner over the eval grid (E0/E3) |
+
+*The Goal Manager seam (M3a/M3b technology selection) was dropped by D60.*

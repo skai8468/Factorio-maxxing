@@ -2,8 +2,13 @@
 
 Human-Assisted Factorio Harness (FYP).
 
-**Research question:** How much human assistance does an LLM agent need to climb the
-Factorio technology tree, and can harness engineering reduce that requirement?
+**Research question:** How much human guidance does a budget LLM need to reach
+frontier-model performance in Factorio, and how much of that guidance can harness
+engineering replace? (Changed 2026-10-16 — `docs/decisions.md` D60.)
+
+Evaluation: a 2×2×2 grid — frontier vs budget model × standard vs specialized harness ×
+with vs without human guidance — at an equal dollar budget per run, plus a catalogue
+of stuck-time errors and the guidance that resolved them. See `docs/build-plan.md` §5a–5d.
 
 ## Source of truth (highest first)
 
@@ -22,13 +27,18 @@ If a conversation instruction conflicts with these documents, stop and flag it.
 
 ## Current scope
 
-**M0 and M1 only.** See `docs/build-plan.md` §3–4.
+M0 and M1 are complete. **Current: E0 — eval scaffolding** (open-ended goal, milestone
+Scorer, dollar-budget stop, annotation schema, per-cell configs). See
+`docs/build-plan.md` §3–4.
 
-Do NOT implement: M2 goal sequences, M3a/M3b technology selection, M4, autonomous goal
-manager, tech-tree planning, repair strategies, skill libraries, `GameState`
-checkpointing, experiment infrastructure, advanced Factorio-specific stuck detectors.
+Do NOT implement before E2: specialized-harness features — memory, skill libraries,
+repair strategies, decomposition aids, Factorio-specific stuck detectors. From E2 each
+must be switchable and target a catalogued error category.
 
-The architecture must permit these later. Do not build them now.
+Dropped entirely: M2 goal sequences, M3a/M3b technology selection, M4, autonomous goal
+manager, tech-tree planning. `GameState` checkpointing stays out of scope.
+
+Do not build a phase before its turn.
 
 ## Architecture invariants — mandatory
 
@@ -39,8 +49,12 @@ The architecture must permit these later. Do not build them now.
 | Human | Provide text only | Execute actions · touch the environment |
 | Recorder | Record passively | Determine success |
 | Policy | Generate Python actions | Contain model-specific logic |
+| Scorer | Compute milestones from recorded FLE state | Drive control flow · decide goal completion · read the verifier |
 
-- Policy and verifier models stay independently configurable.
+- Policy and verifier models stay independently configurable. In eval runs both use
+  the same model, and the verifier's tokens count toward the run's budget.
+- The human speaks only when the harness asks. Annotations are post-hoc, stored apart
+  from trajectories, and never read by control flow.
 - `MockFactorioEnv` is a deterministic fixture keyed by step index. It must NOT
   interpret submitted Python, and must not simulate Factorio.
 - Store raw token counts; never hard-code dollar costs into trajectories.
