@@ -188,6 +188,36 @@ Intervention text is stored **verbatim** and is the source of truth. Optional
 classification (`KNOWLEDGE` / `DIAGNOSIS` / `PLANNING` / `CORRECTION`) is an additional
 field only — it never replaces raw text and never affects control flow.
 
+## `scorer.py`
+
+Reads a finished trajectory; never runs in the loop (`decisions.md` D62).
+
+```python
+LADDER_VERSION: str                 # stamped on every Score; bump on any ladder change
+
+@dataclass(frozen=True)
+class Milestone:
+    key: str                        # e.g. "automated-iron"
+    description: str
+    check: Callable[[dict, History], bool]   # one observation + what was seen so far
+
+@dataclass(frozen=True)
+class Score:
+    run_id: str | None
+    steps: int                      # step records read
+    reached: dict[str, int]         # milestone key -> first recorded step it held
+    highest: int                    # 1-based rung of the highest milestone; 0 = none
+    ladder_version: str
+
+def score_records(records, ladder=LADDER) -> Score
+def score_trajectory(path) -> Score
+```
+
+Reads `step` records' `observation` only. `verification` records are ignored by
+construction, so no verdict can change a score. A milestone stays reached once it has
+held. `python -m factorio_maxxing.scorer TRAJECTORY.jsonl ...` prints the ladder with the
+first step of each rung.
+
 ## Config
 
 ```json

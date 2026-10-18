@@ -2065,3 +2065,63 @@ is never measured.
 
 **Rollback.** `~/venvs/fle-0.4.3` is kept until the upgrade is signed off; roll back by
 moving it to `~/venvs/fle` and reverting this commit.
+
+---
+
+## D62 - The Scorer reads milestones from recorded state, and the ladder is data
+
+**Decision.** `factorio_maxxing/scorer.py` scores a finished trajectory against the
+build-plan 5d draft ladder (milestones 1-13, `LADDER_VERSION = "v0-draft"`). It reads only
+`step` records' observations - never `verification` records - and runs after the run,
+not in the loop. A milestone is reached at the first step whose observation satisfies it
+and stays reached; the headline is the highest rung reached, with the first step of
+every rung kept for steps-to-milestone.
+
+**Why it reads state and not verdicts.** The verifier was fooled twice on goal 5 (D49,
+D52). The capability metric of the experiment cannot inherit that: the Scorer and the
+verifier must be able to disagree, and when they do the Scorer is the measurement.
+
+**How each rung is read** - the research lead's draft wording made checkable. These are
+interpretations, recorded so they can be challenged:
+
+| # | Rung | Reached when |
+|---|---|---|
+| 1 | Iron ore in inventory | inventory holds `iron-ore` > 0 |
+| 2 | Iron plate smelted | `iron-plate` has appeared in inventory, flow outputs or crafted outputs, at any step |
+| 3 | Burner drill WORKING | a `burner-mining-drill` has status `WORKING` |
+| 4 | Automated iron | a `WORKING` drill whose `resources` include iron ore has its `drop_position` on the tiles of a `WORKING` furnace - automation, not a furnace filled by hand |
+| 5 | Copper plate | `copper-plate` has appeared, as in 2 |
+| 6 | Gear and circuit | `iron-gear-wheel` and `electronic-circuit` have both appeared, not necessarily at the same step |
+| 7 | Steam power | a `steam-engine` is `WORKING` - which needs something drawing power; a working boiler is not enough |
+| 8 | Lab WORKING | a `lab` is `WORKING`, i.e. researching |
+| 9 | `automation` | `automation` researched, by name |
+| 10 | Red-science assembler | a `WORKING` assembler whose recipe names `automation-science-pack` - **unverified live**: no recorded run has an assembler yet |
+| 11 | Electric drill WORKING | an `electric-mining-drill` is `WORKING` |
+| 12 | `logistics` | `logistics` researched |
+| 13 | Green science | `logistic-science-pack` has appeared |
+
+Shapes are read as recorded: string positions (`"x=3.0 y=-73.0"`), string inventory
+quantities, enum-named statuses (`"EntityStatus.WORKING"`); the item-list helpers are
+shared with the renderer. Malformed observations are skipped, not fatal.
+
+**Checked against the recorded runs.**
+
+- The goal-5 rescue `20261008T180209-c4fb9b83`: rung 9, `automation` at step 86 -
+  matching the recorded completion.
+- Rehearsal 2 `20261008T172157-c51f0c02`, whose verifier declared "Research automation"
+  done with automation unresearched: rung 5. The Scorer is not fooled.
+- The steam-power demo rehearsal `20261009T012905-d65a0a7e`, verifier DONE on a working
+  boiler: rung 5 - its steam engine never ran, because nothing drew power.
+- Goal 3 on 0.4.8, `20261018T190420-5948ff61`: rung 4, automated iron at step 3.
+
+**Open for the research lead.**
+
+- *Highest rung is not contiguous progress.* The goal-5 rescue reached rung 9 without
+  ever running a burner drill (rungs 3 and 4): it hand-fed furnaces. "Highest milestone
+  reached" (build-plan 5) scores that as 9. A contiguous measure - the last rung with
+  every rung below it reached - would score it 2. Both are computable from `Score.reached`;
+  which one is the headline is a metric decision.
+- *Starting inventory counts.* Rungs are read from the first recorded step, so a starting
+  kit containing a ladder item would credit it. The current kit (3 burner drills, 2 stone
+  furnaces) credits none, and the grid uses one kit for every run (5a).
+- The ladder itself is still a draft; any change bumps `LADDER_VERSION`.
