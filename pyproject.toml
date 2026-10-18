@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "factorio-maxxing"
 version = "0.1.0"
-description = "Human-Assisted Factorio Harness - how much human assistance an LLM agent needs to climb the Factorio technology tree"
+description = "Human-Assisted Factorio Harness - how much human guidance a budget LLM needs to reach frontier-model performance in Factorio"
 readme = "README.md"
 requires-python = ">=3.13"
 license = { text = "MIT" }
@@ -22,14 +22,15 @@ api = [
 ]
 # Live Factorio. Install inside WSL2, where Docker and the cluster live (D29, D30).
 #
-# The a2a-sdk pin is load-bearing, not tidiness. FLE 0.4.3 declares a2a-sdk with no
-# constraint, so a fresh resolve takes 1.x, where a2a.types no longer exports TextPart,
-# Message, AgentCard or Role. Six FLE modules import those names, including
-# agents/agent_abc.py, which fle.env.gym_env.registry pulls in - so make_factorio_env
-# dies at import. See docs/fle-integration.md.
+# FLE is pinned to a commit, not a version: 0.4.8 exists only on GitHub (PyPI stops at
+# 0.4.3, and upstream tags no release after it), and every run of the eval grid must use
+# the same FLE (D61). FLE pins a2a-sdk==1.1 itself, so the a2a-sdk<1 pin that 0.4.3
+# needed is gone - it would now make the install unresolvable.
+#
+# After installing, run scripts/patch_fle.sh: FLE still ships a Factorio 2.0.73 server
+# image, and the client needs 2.0.77 (D34).
 fle = [
-    "factorio-learning-environment[eval]>=0.4.3",
-    "a2a-sdk<1",
+    "factorio-learning-environment[eval] @ git+https://github.com/JackHopkins/factorio-learning-environment@e2a829d22a635a9a111d21bf5523e09e903ae145",
 ]
 dev = [
     "pytest>=8.0",
@@ -37,6 +38,11 @@ dev = [
     "openai>=1.0",
     "anthropic>=1.0",
 ]
+
+# Hatchling refuses a direct git reference in metadata without this, even where the
+# fle extra is never installed.
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["factorio_maxxing"]

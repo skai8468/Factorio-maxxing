@@ -1087,6 +1087,12 @@ that a reinstall silently reverts (D37). Touching a private attribute is recorde
 docstring and covered by a test that mirrors the real guard, so an upstream fix that
 makes this redundant will not break anything.
 
+**Correction (2026-10-18, D61).** The flag lives on `instance.game_control`, not on the
+instance; `FactorioInstance.unpause()` delegates to it. Setting `instance._is_paused`
+created an attribute FLE never reads, so on 0.4.3 the guard still swallowed the unpause,
+and the test fake shared the mistake. The harness now sets `game_control._is_paused`;
+FLE 0.4.8 makes `unpause()` unconditional in any case.
+
 ---
 
 ## D40 - Starting inventory is an explicit scenario parameter
@@ -2002,3 +2008,60 @@ invariants: it computes milestones from recorded state and never drives control 
 **Left to the research lead.** Frontier and budget models (and any extra rows), $X,
 seeds per run (≥3 recommended), the final milestone ladder, and whether runs 3 and 4
 keep the standard stuck detector or use an improved one.
+
+---
+
+## D61 - FLE is pinned to 0.4.8 at commit e2a829d, and patched by a script
+
+**Decision (research lead, 2026-10-16; installed 2026-10-18).** The `fle` extra pins
+`factorio-learning-environment[eval] @ git+...@e2a829d22a635a9a111d21bf5523e09e903ae145`,
+replacing `>=0.4.3`, and drops the `a2a-sdk<1` pin. `scripts/patch_fle.sh` applies and
+verifies the two edits the harness makes to the installed package. It is the first E0
+task.
+
+**Why now.** Every run of the eval grid must use one FLE (D60), so the version has to be
+settled before E1, not changed mid-experiment. Upstream's 0.4.4-0.4.8 fix bugs we were
+working around and make tool responses an order of magnitude faster (#407: `get_entities`
+at 1,600 entities 7.9 s -> 0.8 s), which matters most for long open-ended budget runs.
+
+**Why a commit, not a version.** 0.4.8 exists only on GitHub: PyPI stops at 0.4.3 and
+upstream tags no release after it. A branch or a range would let two runs drift onto
+different FLE code; `test_fle_is_pinned_to_one_commit` keeps the pin a full SHA.
+
+**Why a script.** Both edits live in `site-packages`, and a reinstall silently discards
+them - the D34 version pins and the D37 truncation fix were hand edits, recorded only as
+procedures in `fle-integration.md`. The script applies them idempotently and exits
+non-zero if either is incomplete:
+
+- the Factorio image pinned to 2.0.77 in `run-envs.sh`, `run_envs.py` and (once a first
+  start has written it) `docker-compose.yml` - FLE 0.4.8 still ships 2.0.73;
+- the `.split(":")[-1]` truncation removed from five tools, verified across every file
+  under `env/tools`.
+
+**What the upgrade changed for the harness** (detail in `fle-integration.md`, "Upgrading
+to 0.4.8"):
+
+- *D37 is not retired.* The plan assumed upstream #398 replaced it. It fixed only the
+  shared `tool.py`; measured live, `place_entity` still reduced "No assembling_machine_1
+  in inventory. Current inventory: ..." to the inventory alone - the failure that misled
+  the agent in rehearsal 3. Five sites are still patched.
+- *D39 is fixed upstream, and was misdirected.* `unpause()` is unconditional on 0.4.8.
+  D39 had set the pause flag on the instance rather than on `game_control`, which owns
+  it; corrected, with a test fake that now models FLE's structure (see D39's correction).
+- *D53 keeps its code.* `background_step` no longer uses `game.player`, but enemies are
+  still removed before chunk generation and worms are still spared.
+- *The policy's API reference changed.* `configs/fle_api_reference.md` is regenerated
+  (D31); the only difference is the `Technology` enum's Factorio 2.0 names. Trajectories
+  before and after this commit were produced from different prompt text.
+- *Unchanged and re-confirmed:* `step()` still calls `instance.eval(..., timeout=120)`, so
+  the D58 wrapper applies; `info` keys, observation keys and shapes; the slow-mode walking
+  handler.
+
+**Measured.** Smoke goal done in 3 steps with a recorded `WORKING` drill; goal 3 done in
+10 steps with 10 plates and `WORKING` drill and furnace in recorded state; error
+signatures stable across code lines; a slow walk waits for arrival. New: in slow mode
+`player_location` stays stale on the next step too - recorded, not fixed, since slow mode
+is never measured.
+
+**Rollback.** `~/venvs/fle-0.4.3` is kept until the upgrade is signed off; roll back by
+moving it to `~/venvs/fle` and reverting this commit.

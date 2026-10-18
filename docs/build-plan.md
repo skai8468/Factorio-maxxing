@@ -720,7 +720,7 @@ Factorio before the offline loop works.**
 Phases 0–5 are complete. The evaluation build order (D60), each step one Compact
 Development Cycle:
 
-**E0** — 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
+**E0** — 18b. FLE pinned to 0.4.8 @ `e2a829d`, patched by `scripts/patch_fle.sh` (D61) ✓ · 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
 fixtures · 20. open-ended goal mode · 21. `budget_usd` stop from raw tokens and the
 pricing table · 22. annotation schema and a validator · 23. one config per grid cell ·
 24. a live run that stops at $X and is scored

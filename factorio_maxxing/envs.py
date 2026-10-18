@@ -455,23 +455,28 @@ class RealFactorioEnv:
         self._env.instance_speed = self.game_speed
 
     def _force_unpause(self) -> None:
-        """Clear a pause left in the game by an earlier run (D39).
+        """Clear a pause left in the game by an earlier run (D39, corrected in D61).
 
-        FLE keeps pause state in a Python attribute initialised to ``False`` and never
-        reconciled against the game, and ``unpause()`` returns early when that attribute
-        says the game is already running. A run that ended with ``pause_after_action``
-        leaves ``game.tick_paused = true`` set in the *game*, so the next process - a
-        fresh object, flag ``False`` - silently declines to clear it. The world then
-        never ticks: path requests never resolve, and the agent cannot move.
+        A run that ended with ``pause_after_action`` leaves ``game.tick_paused = true``
+        set in the *game*. FLE 0.4.3's ``unpause()`` returned early when its own Python
+        flag - initialised to ``False`` and never reconciled - said the game was already
+        running, so the next process silently declined to clear it, and the world never
+        ticked: path requests never resolve, and the agent cannot move.
 
-        Setting the flag before unpausing defeats the guard. This runs on every
-        construction, not only when the pause is disabled, because a paused game is
-        inherited the same way whatever this run intends to do afterwards.
+        FLE 0.4.8 (upstream #397) makes ``unpause()`` unconditional, so the call alone now
+        clears the pause. The flag is still set first, as a guard should a guarded
+        ``unpause()`` ever return. It is set on ``instance.game_control``, which owns it;
+        D39 set it on the instance itself, where FLE never reads it (D61).
+
+        This runs on every construction, not only when the pause is disabled, because a
+        paused game is inherited the same way whatever this run intends to do afterwards.
         """
         instance = getattr(self._env, "instance", None)
         if instance is None:
             return
-        instance._is_paused = True
+        control = getattr(instance, "game_control", None)
+        if control is not None:
+            control._is_paused = True
         instance.unpause()
 
     def reset(self) -> Observation:

@@ -4,10 +4,11 @@ Findings about the Factorio Learning Environment, recorded so future sessions do
 re-derive them. **Consume this document instead of re-reading FLE source.**
 
 Originally verified against `JackHopkins/factorio-learning-environment` @ `main`,
-2026-09-02, FLE version 0.3.0. **The installed version is 0.4.3** (PyPI, 2026-09-06);
-findings re-checked against it are marked *confirmed 0.4.3*, and one recorded detail
-turned out to be wrong - see the `reset()` note below. Re-verify before relying on
-anything marked *unverified*.
+2026-09-02, FLE version 0.3.0, then against 0.4.3 (PyPI, 2026-09-06); findings checked
+against that are marked *confirmed 0.4.3*. **The installed version is 0.4.8 @ commit
+`e2a829d`** (GitHub only; installed 2026-10-18, D61) - see "Upgrading to 0.4.8" below for
+what changed and what was re-measured. Re-verify before relying on anything marked
+*unverified*.
 
 ---
 
@@ -71,12 +72,41 @@ distinguish from harness defects (the D3 attribution argument).
 Docker Engine runs inside the distro rather than Docker Desktop (D30): Docker 29.8.0,
 Compose v5.5.1, containerd v2.3.4, service enabled under systemd.
 
-### Installing FLE - two things that block a fresh install
+### Installing FLE - from the commit pin, then patch
 
-Environment: `~/venvs/fle`, created with `uv venv --python 3.13`, FLE installed as
-`factorio-learning-environment[eval]` (0.4.3, 148 packages).
+**Current procedure (0.4.8, D61).** FLE is installed through this package's `fle` extra,
+which pins commit `e2a829d` - there is no 0.4.8 on PyPI and no tag. Then
+`scripts/patch_fle.sh` applies the harness's two site-packages edits: the Factorio 2.0.77
+image pin (below) and the error-truncation fix for five tools (D37). Inside WSL:
 
-**1. `a2a-sdk` must be pinned below 1.0.** FLE 0.4.3 declares `a2a-sdk` with **no version
+```bash
+uv venv --python 3.13 ~/venvs/fle
+cd /mnt/c/Users/leong/dev/Factorio-maxxing
+VIRTUAL_ENV=~/venvs/fle uv pip install -e ".[fle,api]"
+bash scripts/patch_fle.sh ~/venvs/fle
+```
+
+The script is idempotent and exits non-zero if either edit is incomplete; re-run it after
+**any** install that touches FLE. Item 2 below (`psycopg2`) still applies; item 1 does
+not.
+
+**Rollback.** The 0.4.3 environment is kept as `~/venvs/fle-0.4.3` until the upgrade is
+signed off. Its scripts hard-code `~/venvs/fle` in their shebangs, so roll back by moving
+it, not by calling it: `mv ~/venvs/fle ~/venvs/fle-0.4.8 && mv ~/venvs/fle-0.4.3
+~/venvs/fle`, then restart the cluster.
+
+**The cluster started by one install is invisible to another.** `fle cluster
+stop/restart` read `docker-compose.yml` from the installed package, which a fresh install
+does not have until its first `start`. After a reinstall, `fle cluster start -n 1 -s
+open_world` first (it regenerates the compose file and adopts the running container),
+then `restart`, so the server drops the old version's Lua.
+
+**Superseded (0.4.3).** The original install, `factorio-learning-environment[eval]` (0.4.3,
+148 packages), needed the two fixes below.
+
+**1. `a2a-sdk` must be pinned below 1.0 - 0.4.3 only.** *FLE 0.4.8 pins `a2a-sdk==1.1`
+itself and uses the 1.x API; the `<1` pin is removed from `pyproject.toml`, where it would
+now make the install unresolvable.* FLE 0.4.3 declares `a2a-sdk` with **no version
 constraint**, so a fresh resolve picks up 1.x, in which `a2a.types` no longer exports
 `TextPart`, `Message`, `AgentCard`, `Role`, `AgentCapabilities`, `AgentProvider` or
 `AgentSkill`. Six FLE modules import those names - including `fle/agents/agent_abc.py`,
@@ -119,8 +149,10 @@ because the shell script rewrites the compose file. A `grep` restricted to
 project.)
 
 **These edits live in `site-packages` and a reinstall discards all three.** `.orig`
-backups sit beside each patched file. After any `uv pip install` that touches FLE,
-re-apply and re-verify.
+backups sit beside each patched file. **`scripts/patch_fle.sh` applies and verifies them**
+(D61); run it after any `uv pip install` that touches FLE. FLE 0.4.8 still ships 2.0.73,
+and a fresh install has no `docker-compose.yml` until the first `fle cluster start`, so the
+script patches that file only when it exists.
 
 ### Cluster - confirmed working 2026-09-06, re-verified on 2.0.77 2026-09-07
 
@@ -314,6 +346,52 @@ files into the repository. `.env` is gitignored so nothing leaks, but the templa
 environment. **Run `fle` from `~/fle-work`**, not from the repo.
 
 ---
+
+### Upgrading to 0.4.8 - what changed, and what was re-measured (2026-10-18, D61)
+
+Compared v0.4.3 (`6439e18`) with `e2a829d` (main HEAD, "Release 0.4.8", 2026-09-06): 8
+commits, 53 files. Installed: FLE 0.4.8, `a2a-sdk` 1.1.0, `gymnasium` 1.4.0 (replacing
+`gym`), `anthropic` 1.15.0, `openai` 3.35.1.
+
+| Upstream change | Effect on the harness |
+|---|---|
+| `gym` → `gymnasium`; envs registered in gymnasium's registry | None: the harness calls `make_factorio_env` directly (D32), whose signature, `reset()` → `(obs, {})` and `step()` 5-tuple are unchanged |
+| `a2a-sdk==1.1` exact pin | Our `a2a-sdk<1` removed |
+| `tool.py` error messages untruncated (#398) | Partial: five tools still truncate; `patch_fle.sh` fixes them (see "Error truncation") |
+| `GameControl.pause()`/`unpause()` always send the command (#397) | D39's stale-pause problem is fixed upstream. D39's own workaround set the flag on the wrong object - see below |
+| `reset` clears `storage.paths`, `path_requests`, `clearance_entities` (#397) | Stale path state no longer survives a reset |
+| `background_step` uses `game.surfaces[1]`, not `game.player` | One of D53's reasons is gone; the peaceful/enemy clear is kept, because `remove_enemies` still runs before chunk generation and spares worms |
+| Tool responses zlib+base64 compressed in Lua; `dump()` linear (#407) | Tool calls only (`FLEZ1:` prefix, decoded in Python). Raw `rcon_client.send_command` callers - peaceful, the camera, slow mode, walk recovery - see plain text as before |
+| `Technology` enum: Factorio 2.0 names, aliases, additions | `configs/fle_api_reference.md` regenerated; the enum is the only change (+264 characters) |
+| `get_path` polls up to 120 times (~115 s), was 10 (`FLE_GETPATH_MAX_ATTEMPTS`) | A path that cannot resolve now blocks a step for up to ~2 minutes, inside FLE's 120 s step timeout |
+| Research prerequisites checked before cancelling (#399); pole collision checks in `connect_entities` (#400); GameState keeps inventories (#374); `FLE_INIT_RETRIES` (#406, off by default) | Fixes gained with no harness change |
+| **Unchanged** | Server image still `2.0.73`; `storage.fast` and the 5-tick walking handler; `_generate_chunks(radius=25)`; `step()` still calls `instance.eval(..., timeout=120)`, so the D58 step-timeout wrapper still applies; `info` keys; observation keys and shapes |
+
+**D39 targeted the wrong object.** The pause flag lives on `instance.game_control` in both
+0.4.3 and 0.4.8; `FactorioInstance.unpause()` delegates to it. D39 set
+`instance._is_paused`, an attribute FLE never reads, so on 0.4.3 its `unpause()` call was
+still swallowed by the guard - and the test fake had copied the same mistake, putting the
+flag on the instance. On 0.4.8 the unconditional `unpause()` clears the pause regardless.
+The harness now sets the flag on `game_control`, and the fake models FLE's structure; the
+corrected tests fail against the old code.
+
+**Re-measured live on 0.4.8.**
+
+- **Errors:** `info["error_occurred"]` and `info["result"]` as before (D35). The same
+  failed placement submitted at code line 1 and line 2 gives the same `error_signature`.
+- **Observation:** same keys, inventory quantities still strings, research still a
+  `technologies` list, flows unchanged; the renderer shows every section.
+- **Smoke goal (build-plan §24),** Haiku/Haiku, no human: done in 3 steps, ~$0.06, the
+  recorded drill `EntityStatus.WORKING` (`20261018T190330-b442992e`).
+- **Goal 3,** `live-measured.json` with a Haiku verifier, no human: done in 10 steps,
+  ~$0.10, recorded inventory 10 iron plates with drill and furnace `WORKING`
+  (`20261018T190420-5948ff61`). The 0.4.3 run of the same goal took 8 steps
+  (`20261008T014003-1546c013`) - one run each, so this is no evidence of a difference.
+- **Slow-mode walk:** `move_to(25, 10)` blocks for 4.1 s and the character really arrives
+  at (25.4, 10.5). **`player_location` stays at (0, 0) on the following step** in slow
+  mode, where fast mode reports (25.5, 10.5). D48 recorded it stale within one program;
+  across steps is new information, not confirmed against 0.4.3. Slow mode is never
+  measured, but a watched agent reading `player_location` is misinformed.
 
 ## Gym interface
 
@@ -517,8 +595,19 @@ coal the same failure rendered `..., coal=20`.
 
 Patching just `tool.py` is not enough - the five tools repeat the expression themselves.
 
-**Apply it** from `~/fle-work`, with the FLE virtualenv. Idempotent; re-running is a
-no-op, and `.orig` backups are written on the first pass:
+**Still needed on 0.4.8, for five of the six sites** (measured 2026-10-18, D61). Upstream
+#398 fixed the shared `tool.py` - it now strips only the Lua source prefix and an outer
+pair of quotes - but the five tools that repeat the expression inline were not touched.
+Unpatched, 0.4.8 still turned `No assembling_machine_1 in inventory. Current inventory:
+burner-mining-drill=3, stone-furnace=2` into `Could not place assembling-machine-1 at (5.0,
+5.0), burner-mining-drill=3, stone-furnace=2`. Patched, the full message arrives, still
+carrying the Lua chunk name and line (`[string -- Helper to convert surface direction to
+ent...]:148:`), as it did on 0.4.3.
+
+**Apply it with `scripts/patch_fle.sh ~/venvs/fle`**, which also verifies that no tool
+anywhere under `env/tools` still truncates. The original procedure, kept for reference -
+from `~/fle-work`, with the FLE virtualenv; idempotent, `.orig` backups on the first
+pass:
 
 ```bash
 ~/venvs/fle/bin/python - <<'EOF'

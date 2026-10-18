@@ -176,17 +176,31 @@ class _FakeRCON:
         return ""
 
 
-class _FakeInstance:
-    """Stands in for FLE's FactorioInstance, whose pause flag is the point here.
+class _FakeGameControl:
+    """Stands in for FLE's GameControl, which owns the pause flag.
 
-    Mirrors the real guard: unpause() does nothing unless the flag says paused, which
-    is exactly the bug D39 works around.
+    Mirrors FLE 0.4.3's guard - unpause() does nothing unless the flag says paused - the
+    bug D39 works around. FLE 0.4.8 drops the guard; the harness must clear a stale pause
+    under either behaviour.
     """
 
-    def __init__(self):
+    def __init__(self, instance):
+        self._instance = instance
         self._is_paused = False
+
+    def unpause(self):
+        if self._is_paused:
+            self._is_paused = False
+            self._instance.rcon_unpaused = True
+
+
+class _FakeInstance:
+    """Stands in for FLE's FactorioInstance, which delegates pausing to game_control."""
+
+    def __init__(self):
         self.unpause_calls = 0
         self.rcon_unpaused = False
+        self.game_control = _FakeGameControl(self)
         self.namespaces = [_FakeNamespace()]
         self.speeds_set: list[float] = []
         self.fast = True
@@ -202,9 +216,7 @@ class _FakeInstance:
 
     def unpause(self):
         self.unpause_calls += 1
-        if self._is_paused:
-            self._is_paused = False
-            self.rcon_unpaused = True
+        self.game_control.unpause()
 
 
 class _FakeGymEnv:
@@ -359,17 +371,18 @@ def test_the_pause_can_be_turned_off_for_a_watchable_run(monkeypatch):
 
 
 def test_construction_clears_a_pause_left_by_an_earlier_run(monkeypatch):
-    """D39: FLE's unpause no-ops when its own flag disagrees with the game.
+    """D39: FLE 0.4.3's unpause no-ops when its own flag disagrees with the game.
 
     The flag is False on a fresh instance whatever the game is actually doing, so
-    without this the world never ticks and the agent cannot move.
+    without this the world never ticks and the agent cannot move. The flag lives on
+    game_control, not on the instance (D61).
     """
     from factorio_maxxing.envs import RealFactorioEnv
 
     fake_env, _ = install_fake_fle(monkeypatch, reset_result=({}, {}))
     RealFactorioEnv()
     assert fake_env.instance.rcon_unpaused is True
-    assert fake_env.instance._is_paused is False
+    assert fake_env.instance.game_control._is_paused is False
 
 
 def test_the_pause_is_cleared_even_when_pausing_stays_on(monkeypatch):
