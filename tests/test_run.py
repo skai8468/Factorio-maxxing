@@ -66,7 +66,9 @@ def test_defaults_match_the_documented_config():
     assert config.max_interventions_without_progress == 3
     assert config.verification_interval == 1
     assert config.max_steps == 32
-    assert config.history_length == 16
+    assert config.history_length == 8
+    assert config.history_report_interval == 8
+    assert config.dump_prompts == ""
     assert config.environment == "mock"
     assert config.pause_after_action is True
     assert config.enable_vision is False
@@ -656,3 +658,62 @@ def test_a_run_prints_its_usage_and_stores_no_cost(tmp_path, capsys):
     text = trajectory.read_text(encoding="utf-8")
     assert "$" not in text
     assert '"cost"' not in text
+
+
+# --- D66: history report and prompt dumping --------------------------------------------
+
+from factorio_maxxing.run import (  # noqa: E402
+    PromptDumpingClient,
+    build_policy_client,
+    build_reporter,
+)
+
+
+def test_the_reporter_shares_the_policy_client_and_interval():
+    client = build_policy_client(Config(policy_model="stub"))
+    reporter = build_reporter(Config(history_report_interval=5), client)
+    assert reporter.client is client and reporter.interval == 5
+
+
+def test_a_zero_interval_turns_the_report_off():
+    assert build_reporter(Config(history_report_interval=0), object()) is None
+
+
+def test_a_negative_interval_is_refused():
+    with pytest.raises(ConfigError):
+        build_reporter(Config(history_report_interval=-1), object())
+
+
+def test_prompts_are_dumped_one_file_per_call(tmp_path):
+    client = build_policy_client(Config(policy_model="stub", dump_prompts=str(tmp_path)))
+    assert isinstance(client, PromptDumpingClient)
+    client.generate("first prompt")
+    client.generate("second prompt")
+    assert (tmp_path / "call-0000.txt").read_text(encoding="utf-8") == "first prompt"
+    assert (tmp_path / "call-0001.txt").read_text(encoding="utf-8") == "second prompt"
+
+
+def test_a_mock_run_writes_history_reports(tmp_path):
+    code = main(
+        [
+            "--goal",
+            "Produce iron plates",
+            "--mock",
+            "--policy-model",
+            "stub",
+            "--verifier-model",
+            "stub",
+            "--human",
+            "none",
+            "--history-report-interval",
+            "1",
+            "--trajectory-dir",
+            str(tmp_path),
+        ]
+    )
+    assert code == 0
+    (path,) = tmp_path.glob("*.jsonl")
+    records = read_trajectory(path)
+    steps = [r["step"] for r in records if r["type"] == "step"]
+    # The verifier ends the run on the last step, before a report no prompt would read.
+    assert [r["step"] for r in records if r["type"] == "report"] == steps[:-1]

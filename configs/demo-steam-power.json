@@ -8,7 +8,8 @@
   "max_interventions_without_progress": 8,
   "verification_interval": 1,
   "max_steps": 120,
-  "history_length": 16,
+  "history_length": 8,
+  "history_report_interval": 8,
   "environment": "live",
   "task_key": "open_play",
   "starting_inventory": {
@@ -22,5 +23,6 @@
   "peaceful": true,
   "step_timeout": 600,
   "trajectory_dir": "trajectories",
+  "dump_prompts": "",
   "api_reference": "configs/fle_api_reference.md"
 }

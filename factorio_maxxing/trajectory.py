@@ -107,6 +107,11 @@ class TrajectoryRecorder:
             original_step=original_step,
         )
 
+    def record_report(self, step: int, text: str) -> None:
+        """Record a new history report verbatim (D66). It covers steps 0 to ``step``;
+        written so an annotator can see what the agent was told it had done."""
+        self._write("report", step, text=text)
+
     def close(self) -> None:
         if not self._file.closed:
             self._file.close()

@@ -137,12 +137,13 @@ error taxonomy (assertion / code / environment).
 With two budget models (D64) the budget row is repeated for each: runs 5-8 for Haiku 5.5
 and 5'-8' for GPT 6 Luna.
 
-- **Standard harness** = a replication of FLE's published agent (`GymAgent`): its
-  instructions, its observation formatting and its history scheme (8 recent steps plus
-  a rolling LLM report), on FLE's action layer - plus the M1 human interface (verifier,
-  stuck detector, human backends), which the human cells need (D64). Supersedes "the M1
-  harness at the `m1-complete` tag" (D60), after the comparison found the M1 harness
-  gave the model markedly less context than FLE's.
+- **Standard harness** = the M1 harness upgraded with the strengths of FLE's published
+  agent (`GymAgent`), written in this repository rather than imported (D66): FLE-style
+  instructions, FLE-level entity detail, character position / game time / score / saved
+  functions, stale-entity trimming in history, and an 8-step window plus a rolling LLM
+  history report - with the M1 human interface (verifier, stuck detector, human
+  backends) and the admin-access guard. A baseline modelled on FLE's agent, not a
+  replication of it. Supersedes D64 item 1 and D60's "M1 harness at `m1-complete`".
   **Specialized harness** = our own, built in E2 on top of the standard harness.
 - **Equal steps, not equal dollars (D65).** Every run is capped at **300 steps** (one
   policy program per step; verifier, history-summary and human turns use no steps but
@@ -744,7 +745,10 @@ Factorio before the offline loop works.**
 Phases 0–5 are complete. The evaluation build order (D60), each step one Compact
 Development Cycle:
 
-**E0** — 18b. FLE pinned to 0.4.8 @ `e2a829d`, patched by `scripts/patch_fle.sh` (D61) ✓ · 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
+**E0** — 18b. FLE pinned to 0.4.8 @ `e2a829d`, patched by `scripts/patch_fle.sh` (D61) ✓ ·
+18c. standard harness upgraded with FLE's strengths - instructions, entity detail,
+observation fields, stale-entity trimming, history report - plus the admin-access guard
+(D66) ✓ · 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
 fixtures (D62) ✓ · 20. open-ended goal mode · 21. 300-step cap plus a `max_spend_usd` ceiling ($50, D65) computed from raw tokens
 and the pricing table · 22. annotation schema and a validator · 23. one config per grid cell ·
 24. a live run that stops at its cap and is scored

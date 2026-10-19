@@ -17,11 +17,13 @@ def headers(prompt: str) -> list[str]:
 
 
 def test_history_window_default_matches_fle():
-    assert HISTORY_WINDOW == 16
+    """FLE keeps 16 messages - 8 steps - plus a report of the rest (D66)."""
+    assert HISTORY_WINDOW == 8
 
 
 def test_minimal_prompt_has_goal_observation_and_instructions_only():
     assert headers(build(GOAL, OBSERVATION)) == [
+        "HOW TO PLAY",
         "GOAL",
         "CURRENT OBSERVATION",
         "INSTRUCTIONS",
@@ -58,6 +60,7 @@ def test_full_section_order():
         errors=["NameError"],
     )
     assert headers(prompt) == [
+        "HOW TO PLAY",
         "GOAL",
         "RECENT HISTORY",
         "EXECUTION ERRORS",
@@ -96,14 +99,14 @@ def test_empty_policy_in_history_is_labelled():
 def test_history_respects_the_default_window():
     history = [(f"step_{i}()", f"obs {i}") for i in range(20)]
     prompt = build(GOAL, OBSERVATION, history=history)
-    assert "step_3()" not in prompt
-    assert "step_4()" in prompt
+    assert "step_11()" not in prompt
+    assert "step_12()" in prompt
     assert "step_19()" in prompt
 
 
 def test_truncated_history_reports_what_was_dropped():
     history = [(f"step_{i}()", f"obs {i}") for i in range(20)]
-    assert "RECENT HISTORY (last 16 of 20 steps)" in build(
+    assert "RECENT HISTORY (last 8 of 20 steps)" in build(
         GOAL, OBSERVATION, history=history
     )
 
@@ -174,10 +177,11 @@ def test_the_api_reference_is_rendered_verbatim():
     assert "  insert_item(item, target)" in prompt
 
 
-def test_the_api_reference_comes_first():
+def test_the_standing_instructions_and_api_reference_come_first():
     """Most stable content across a goal, so it heads the prompt."""
     prompt = build(GOAL, OBSERVATION, api_reference="place_entity(name)")
     assert headers(prompt) == [
+        "HOW TO PLAY",
         "ENVIRONMENT API",
         "GOAL",
         "CURRENT OBSERVATION",
@@ -185,10 +189,10 @@ def test_the_api_reference_comes_first():
     ]
 
 
-def test_build_prompt_marks_only_the_api_reference_as_cached():
-    """D51: the reference is the stable prefix; everything after it changes per step."""
+def test_build_prompt_caches_the_instructions_and_the_api_reference():
+    """D51, D66: the stable prefix; everything after it changes per step."""
     prompt = build_prompt(GOAL, OBSERVATION, api_reference="place_entity(name)")
-    assert headers(prompt.cached) == ["ENVIRONMENT API"]
+    assert headers(prompt.cached) == ["HOW TO PLAY", "ENVIRONMENT API"]
     assert headers(prompt.rest)[0] == "GOAL"
 
 
@@ -202,5 +206,35 @@ def test_build_prompt_reads_exactly_as_build():
     assert str(build_prompt(*args)) == build(*args)
 
 
-def test_without_a_reference_nothing_is_cached():
-    assert build_prompt(GOAL, OBSERVATION).cached == ""
+def test_without_a_reference_only_the_instructions_are_cached():
+    assert headers(build_prompt(GOAL, OBSERVATION).cached) == ["HOW TO PLAY"]
+
+
+def test_how_to_play_carries_fles_guidance():
+    """D66: adapted from FLE's GYM_AGENT_INSTRUCTIONS."""
+    prompt = build(GOAL, OBSERVATION)
+    for phrase in (
+        "at most 50 lines",
+        "Read the warnings",
+        "roughly 2000 items",
+        "Fuel boilers manually",
+        "Do not repeat steps",
+    ):
+        assert phrase in prompt
+
+
+def test_the_history_report_follows_the_goal():
+    prompt = build(
+        GOAL,
+        OBSERVATION,
+        history=[("x = 1", "obs")],
+        report="Built a furnace at (0, 0).",
+        report_until=7,
+    )
+    names = headers(prompt)
+    assert names.index("HISTORY REPORT (steps 0-7)") == names.index("GOAL") + 1
+    assert "  Built a furnace at (0, 0)." in prompt
+
+
+def test_no_report_section_before_the_first_report():
+    assert not [h for h in headers(build(GOAL, OBSERVATION)) if "REPORT" in h]

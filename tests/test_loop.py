@@ -418,4 +418,117 @@ def test_the_policy_receives_the_api_reference_as_a_cacheable_prefix(recorder):
     client = PromptRecordingClient([POLICY])
     run(recorder, client=client, api_reference="place_entity(name)")
     assert all(isinstance(p, Prompt) for p in client.raw_prompts)
-    assert all(p.cached.startswith("ENVIRONMENT API") for p in client.raw_prompts)
+    assert all(p.cached.startswith("HOW TO PLAY") for p in client.raw_prompts)
+    assert all("ENVIRONMENT API" in p.cached for p in client.raw_prompts)
+
+
+# --- D66: admin-access guard, trimmed history, history report -------------------------
+
+from factorio_maxxing.history_report import HistoryReporter  # noqa: E402
+from factorio_maxxing.loop import forbidden_access  # noqa: E402
+from factorio_maxxing.rendering import STALE_ENTITIES  # noqa: E402
+
+ENTITY_OBS = {"inventory": {"coal": 1}, "entities": [{"name": "stone-furnace"}]}
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "instance.rcon_client.send_command('/sc game.player.insert{name=\"lab\"}')",
+        "x = instance.namespaces[0]",
+        "send_command('/c research_all_technologies()')",
+        "print(().__class__.__mro__[1].__subclasses__())",
+        "f = place_entity.__globals__",
+    ],
+)
+def test_admin_access_is_refused(code):
+    assert forbidden_access(code) is not None
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "place_entity(Prototype.StoneFurnace, position=Position(x=1, y=2))",
+        "instances = 3\nprint(inspect_inventory())",
+        "print('/craft notes')",
+    ],
+)
+def test_ordinary_programs_run(code):
+    assert forbidden_access(code) is None
+
+
+def test_a_blocked_program_is_never_submitted_and_still_costs_a_step(recorder):
+    env = make_env()
+    blocked = "```python\ninstance.rcon_client.send_command('/sc x=1')\n```"
+    result = run(
+        recorder,
+        env=env,
+        client=StubLLMClient([blocked]),
+        goal=Goal(description="Produce iron plates", max_steps=2),
+    )
+    assert env.submitted_actions == []
+    assert result.steps_used == 2
+    steps = records_of(recorder, "step")
+    assert all("Blocked by the harness" in s["execution_errors"][0] for s in steps)
+
+
+def test_history_carries_no_entity_lists(recorder):
+    client = PromptRecordingClient([POLICY])
+    run(recorder, client=client, env=make_env(observation=ENTITY_OBS))
+    last = str(client.raw_prompts[-1])
+    history = last[last.index("RECENT HISTORY") : last.index("CURRENT OBSERVATION")]
+    assert STALE_ENTITIES in history and "stone-furnace" not in history
+    assert "stone-furnace" in last[last.index("CURRENT OBSERVATION") :]
+
+
+class ReportClient(StubLLMClient):
+    """Numbers its reports; the stub already keeps every prompt in ``prompts``."""
+
+    def __init__(self):
+        super().__init__(["report"])
+
+    def generate(self, prompt):
+        response = super().generate(prompt)
+        response.text = f"report {self.call_count}"
+        return response
+
+
+def test_reports_are_written_on_schedule_recorded_and_shown(recorder):
+    reports = ReportClient()
+    client = PromptRecordingClient([POLICY])
+    run(
+        recorder,
+        client=client,
+        env=make_env(steps=10),
+        reporter=HistoryReporter(reports, interval=4),
+        goal=Goal(description="Produce iron plates", max_steps=10),
+    )
+    assert [r["step"] for r in records_of(recorder, "report")] == [3, 7]
+    assert [r["text"] for r in records_of(recorder, "report")] == ["report 1", "report 2"]
+    roles = [r["role"] for r in records_of(recorder, "llm_call")]
+    assert roles.count("summarizer") == 2
+    # The second report is built from the first plus steps 4-7 only.
+    assert "report 1" in reports.prompts[1]
+    assert (
+        "step 4 program:" in reports.prompts[1]
+        and "step 3 program:" not in reports.prompts[1]
+    )
+    # The policy sees the latest report from the step after it is written.
+    assert "HISTORY REPORT (steps 0-3)" in str(client.raw_prompts[4])
+    assert "HISTORY REPORT (steps 0-7)" in str(client.raw_prompts[8])
+    assert "HISTORY REPORT (steps" not in str(client.raw_prompts[3])
+
+
+class FailingClient(StubLLMClient):
+    def generate(self, prompt):
+        raise ConnectionError("summarizer down")
+
+
+def test_a_failed_report_keeps_the_run_going(recorder):
+    result = run(
+        recorder,
+        reporter=HistoryReporter(FailingClient(["x"]), interval=2),
+        goal=Goal(description="Produce iron plates", max_steps=4),
+    )
+    assert result.steps_used == 4
+    assert records_of(recorder, "report") == []

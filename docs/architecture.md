@@ -43,6 +43,7 @@ The Goal Manager (M3+) was removed with M3 (`decisions.md` D60).
 | `stuck.py` | `StuckDetector`; decide whether to request help | Decide goal completion; modify state |
 | `human.py` | `HumanProtocol`; three backends | Execute actions; touch the environment |
 | `trajectory.py` | `TrajectoryRecorder`, JSONL output | Determine success |
+| `history_report.py` | The running history report, written by the policy's model every 8 steps (D66) | Drive control flow; replace the verbatim history window |
 | `loop.py` | Control flow, termination, counters | Assemble prompts; format observations |
 | `run.py` | CLI, config loading | Business logic |
 | `watch.py` | Keep a connected client's camera on the agent (D45) | Touch the loop, the recorder or the agent |
@@ -60,6 +61,9 @@ The Goal Manager (M3+) was removed with M3 (`decisions.md` D60).
 - **Guidance flows one way**: human → recorder (verbatim) and human → context. It never
   reaches the environment.
 - **The loop terminates immediately on `done`**, with no further policy LLM call.
+- **Policy code never reaches admin access.** A program referring to `instance`, RCON,
+  console commands or dunder introspection is not submitted; the step returns the
+  previous observation with a refusal (D66).
 - **The Scorer, like the Recorder, never drives control flow.** It measures how far a
   run got from objective state; the verifier's verdict is not an input to it.
 - **The budget stop reads raw tokens through the pricing table** at runtime; the

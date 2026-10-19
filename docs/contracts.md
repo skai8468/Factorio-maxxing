@@ -122,22 +122,48 @@ exhaustion.
 ## `rendering.py`
 
 ```python
-def render_observation(obs: dict) -> str: ...
+def render_observation(obs: dict, *, max_entities=150, include_entities=True) -> str: ...
 ```
 
-Emits compact labelled sections: `INVENTORY`, `ENTITIES` (position + status),
-`RESEARCH`, `FLOWS`, `EXECUTION` (stdout/stderr). Never sends raw FLE observations to
-a model.
+Emits compact labelled sections: `INVENTORY`, `CHARACTER` (position), `ENTITIES`,
+`RESEARCH`, `FLOWS`, `FUNCTIONS` (the agent's saved functions), `GAME` (tick, game time,
+production score), `EXECUTION` (stdout/stderr). Never sends raw FLE observations to a
+model.
+
+`ENTITIES` lists every entity, one line each: name, position, direction, status, then
+fuel, contents, recipe, research, resources mined, pickup/drop positions and warnings
+(D66). Above `max_entities`, entities without a problem collapse by name and status;
+problems are always detailed first. `include_entities=False` replaces the list with a
+one-line "omitted" note - the form history entries use.
 
 ## `context.py`
 
 ```python
 def build(goal, rendered_observation, history, guidance, errors,
-          *, api_reference="", history_length=16) -> str: ...
+          *, api_reference="", history_length=8, report="", report_until=None) -> str: ...
 ```
 
-`guidance` is a **list** that accumulates across the goal, rendered as a labelled
-`HUMAN GUIDANCE` section, most recent last. History window is 16 steps.
+Section order: `HOW TO PLAY` and `ENVIRONMENT API` (the cached part), `GOAL`,
+`HISTORY REPORT (steps 0-N)`, `RECENT HISTORY`, `EXECUTION ERRORS`,
+`CURRENT OBSERVATION`, `HUMAN GUIDANCE`, `INSTRUCTIONS`. `HOW TO PLAY` is adapted from
+FLE's `GYM_AGENT_INSTRUCTIONS` (D66). `guidance` is a **list** that accumulates across
+the goal, rendered most recent last. History window is 8 steps, each rendered without
+entities; older steps reach the policy through the history report.
+
+## `history_report.py`
+
+```python
+REPORT_INTERVAL = 8
+class HistoryReporter:
+    def __init__(self, client: LLMClient, interval: int = REPORT_INTERVAL): ...
+    def due(self, step: int) -> bool: ...          # after steps 7, 15, 23, ...
+    def update(self, previous: str, steps, current_observation: str) -> LLMResponse: ...
+```
+
+The policy's own client rewrites the report from the previous report, the steps since
+(`(step, program, result)`) and the current observation. Its call is recorded as an
+`llm_call` with role `summarizer`; a failed call keeps the previous report and the run
+continues (D66).
 
 ## `trajectory.py`
 
@@ -160,7 +186,13 @@ JSONL, append-friendly. Four record types. Every record carries `type`, `run_id`
 
 {"type":"intervention","run_id":"...","step":3,"stuck_reason":"...",
  "text":"...","intervention_index":0,"original_step":3}
+
+{"type":"report","run_id":"...","step":7,"text":"..."}
 ```
+
+A `report` record (D66) holds a history report verbatim, covering steps 0 to `step`;
+the policy reads it from the next step on. Its call is an `llm_call` with role
+`summarizer`.
 
 All model usage - policy, verifier, and every future LLM caller - is recorded as
 `llm_call` records distinguished by `role`. Token analysis is therefore permanently

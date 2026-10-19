@@ -213,7 +213,10 @@ MODEL_ROUTES: tuple[tuple[str, str], ...] = (
     ("o4", "openai"),
 )
 
-MAX_TOKENS = 4096
+MAX_TOKENS = 16_000
+"""Output ceiling per call, thinking included. FLE uses 4,096, but Opus 5.5 and Haiku
+5.5 always think and the thinking counts against it, so 4,096 risks a reply cut off
+before any code (D66). Non-streaming requests stay inside SDK timeouts at this size."""
 WORKSPACE_ID_ENV = "ANTHROPIC_WORKSPACE_ID"
 
 

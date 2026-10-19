@@ -31,14 +31,29 @@ class Price:
     cache_read: float
     cache_write: float
     """Five-minute cache writes, 1.25x input - the only TTL the harness requests."""
+    long_context_above: int | None = None
+    """Prompts with more input tokens than this are billed at ``long_context``."""
+    long_context: "Price | None" = None
 
 
-PRICES_AS_OF = "2026-10-08"
-"""When the table was last checked against Anthropic's list prices. OpenRouter lists the
-same per-token prices for these models (D54); its own fees are not modelled."""
+PRICES_AS_OF = "2026-10-20"
+"""When the table was last checked. Claude rates are Anthropic's list prices (Claude
+API reference, cached 2026-10-06); OpenRouter lists the same per-token prices for them
+(D54) and its own fees are not modelled. GPT 6 Luna's rates are OpenRouter's listing for
+``openai/gpt-6-luna`` (models API, 2026-10-20), matching third-party pages (D64, D66)."""
 
 PRICES: dict[str, Price] = {
     "claude-haiku-4-5": Price(input=1.00, output=5.00, cache_read=0.10, cache_write=1.25),
+    # Above 100K input tokens Haiku 5.5 is billed 5x; cache rates assumed to keep the
+    # usual 0.1x / 1.25x of input.
+    "claude-haiku-5-5": Price(
+        input=0.10,
+        output=0.50,
+        cache_read=0.01,
+        cache_write=0.125,
+        long_context_above=100_000,
+        long_context=Price(input=0.50, output=2.50, cache_read=0.05, cache_write=0.625),
+    ),
     "claude-sonnet-5-5": Price(
         input=2.00, output=10.00, cache_read=0.20, cache_write=2.50
     ),
@@ -48,6 +63,7 @@ PRICES: dict[str, Price] = {
     "claude-fable-5-1": Price(
         input=10.00, output=50.00, cache_read=0.25, cache_write=12.50
     ),
+    "gpt-6-luna": Price(input=0.10, output=0.50, cache_read=0.01, cache_write=0.125),
 }
 
 ROLES = ("policy", "verifier")
@@ -71,6 +87,13 @@ def call_cost(record: dict[str, Any]) -> float | None:
     price = PRICES.get(price_key(str(record.get("model", ""))))
     if price is None:
         return None
+    total_input = int(record.get("input_tokens") or 0)
+    if (
+        price.long_context is not None
+        and price.long_context_above is not None
+        and total_input > price.long_context_above
+    ):
+        price = price.long_context
     read = int(record.get("cache_read_tokens") or 0)
     write = int(record.get("cache_write_tokens") or 0)
     uncached = max(int(record.get("input_tokens") or 0) - read - write, 0)
@@ -145,13 +168,13 @@ def format_summary(usage: Sequence[RoleUsage]) -> list[str]:
         else:
             cost = f"~${entry.cost:.2f}"
         lines.append(
-            f"  {entry.role:<9}{', '.join(entry.models)}: {entry.calls} calls, "
+            f"  {entry.role:<10} {', '.join(entry.models)}: {entry.calls} calls, "
             f"{tokens} | {cost}"
         )
     total = sum(entry.cost for entry in usage)
     partial = any(entry.unpriced for entry in usage)
     lines.append(
-        f"  {'total':<9}~${total:.2f}" + (" (priced calls only)" if partial else "")
+        f"  {'total':<10} ~${total:.2f}" + (" (priced calls only)" if partial else "")
     )
     return lines
 

@@ -288,7 +288,7 @@ def test_a_plain_prompt_is_sent_as_a_single_user_string_to_claude():
     request = fake.messages.requests[0]
     assert request["messages"] == [{"role": "user", "content": "build a drill"}]
     assert request["model"] == "claude-haiku-4-5"
-    assert request["max_tokens"] == 4096
+    assert request["max_tokens"] == 16_000  # thinking counts against it (D66)
     assert "temperature" not in request
 
 

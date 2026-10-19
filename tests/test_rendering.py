@@ -6,7 +6,11 @@ formatting, missing/empty fields.
 
 from enum import Enum
 
-from factorio_maxxing.rendering import MAX_TECHNOLOGIES, render_observation
+from factorio_maxxing.rendering import (
+    MAX_TECHNOLOGIES,
+    STALE_ENTITIES,
+    render_observation,
+)
 
 FULL_OBSERVATION = {
     "inventory": {"iron-plate": 12, "coal": 3},
@@ -59,9 +63,12 @@ def body_of(rendered: str, header: str) -> list[str]:
 def test_all_sections_are_emitted_in_contract_order():
     assert sections(render_observation(FULL_OBSERVATION)) == [
         "INVENTORY",
+        "CHARACTER",
         "ENTITIES",
         "RESEARCH",
         "FLOWS",
+        "FUNCTIONS",
+        "GAME",
         "EXECUTION",
     ]
 
@@ -70,9 +77,12 @@ def test_sections_are_emitted_even_for_an_empty_observation():
     rendered = render_observation({})
     assert sections(rendered) == [
         "INVENTORY",
+        "CHARACTER",
         "ENTITIES",
         "RESEARCH",
         "FLOWS",
+        "FUNCTIONS",
+        "GAME",
         "EXECUTION",
     ]
     assert body_of(rendered, "INVENTORY") == ["(none)"]
@@ -114,10 +124,10 @@ def test_entity_position_accepts_a_pair():
     assert body_of(render_observation(obs), "ENTITIES") == ["boiler at (1, 2)"]
 
 
-def test_entities_are_truncated_with_a_remainder_count():
-    obs = {"entities": [{"name": f"chest-{i}"} for i in range(5)]}
-    body = body_of(render_observation(obs, max_entities=2), "ENTITIES")
-    assert body == ["chest-0", "chest-1", "... and 3 more"]
+def test_every_entity_is_listed_up_to_the_detail_limit():
+    """D66: the 32-entity cut hid most of a mid-game factory."""
+    obs = {"entities": [{"name": f"chest-{i}"} for i in range(40)]}
+    assert len(body_of(render_observation(obs), "ENTITIES")) == 40
 
 
 def test_research_renders_current_progress_and_totals():
@@ -285,9 +295,12 @@ def test_live_observation_still_emits_every_section():
     rendered = render_observation(LIVE_OBSERVATION)
     assert sections(rendered) == [
         "INVENTORY",
+        "CHARACTER",
         "ENTITIES",
         "RESEARCH",
         "FLOWS",
+        "FUNCTIONS",
+        "GAME",
         "EXECUTION",
     ]
 
@@ -375,3 +388,98 @@ def test_enums_render_as_bare_names():
     rendered = body_of(render_observation(obs), "ENTITIES")[0]
     assert "NO_FUEL" in rendered
     assert "_Status." not in rendered
+
+
+# --- D66: FLE-level entity detail, new fields, stale-entity trimming ------------------
+
+# Copied from a live FLE 0.4.8 observation (goal 5, step 60): the recorded shapes.
+LIVE_LAB = {
+    "name": "lab",
+    "position": "x=20.5 y=0.5",
+    "direction": "Direction.UP",
+    "status": "EntityStatus.NO_POWER",
+    "lab_input": "automation-science-pack=10",
+    "lab_modules": "",
+    "research": "automation",
+    "warnings": ["not receiving electricity"],
+}
+LIVE_DRILL = {
+    "name": "burner-mining-drill",
+    "position": "x=3.0 y=-73.0",
+    "status": "EntityStatus.WORKING",
+    "fuel": "coal=14",
+    "drop_position": "x=3.5 y=-71.5",
+    "resources": ["name='iron-ore' count=10000 type=None"],
+    "warnings": ["output blocked by item on the ground."],
+}
+
+
+def test_entities_show_contents_research_and_warnings():
+    """The lab's warning is what a human had to explain in rehearsal 4."""
+    body = body_of(render_observation({"entities": [LIVE_LAB]}), "ENTITIES")
+    assert body == [
+        "lab at (20.5, 0.5) facing UP [NO_POWER] | in automation-science-pack=10 "
+        "| researching automation | warnings not receiving electricity"
+    ]
+
+
+def test_entities_show_fuel_resource_and_drop_position():
+    line = body_of(render_observation({"entities": [LIVE_DRILL]}), "ENTITIES")[0]
+    assert line.startswith("burner-mining-drill at (3, -73) [WORKING] | fuel coal=14")
+    assert "mining iron-ore (10000 left)" in line
+    assert "drops at (3.5, -71.5)" in line
+    assert line.endswith("warnings output blocked by item on the ground.")
+
+
+def test_empty_entity_fields_are_skipped():
+    line = body_of(render_observation({"entities": [LIVE_LAB]}), "ENTITIES")[0]
+    assert "modules" not in line and "| |" not in line
+
+
+def test_a_large_base_collapses_healthy_entities_and_details_problems():
+    healthy = [
+        {"name": "transport-belt", "position": [i, 0], "status": "EntityStatus.WORKING"}
+        for i in range(200)
+    ]
+    body = body_of(render_observation({"entities": [*healthy, LIVE_LAB]}), "ENTITIES")
+    assert body[0].startswith("lab at (20.5, 0.5)")  # problems first, in full
+    assert body[1].startswith("transport-belt x200 [WORKING] at (0, 0), (1, 0)")
+    assert body[1].endswith("+194 more")
+    assert len(body) == 2
+
+
+def test_history_entries_omit_stale_entities():
+    rendered = render_observation({"entities": [LIVE_LAB]}, include_entities=False)
+    assert body_of(rendered, "ENTITIES") == [STALE_ENTITIES]
+    assert "lab" not in rendered
+
+
+def test_character_game_and_functions_are_rendered():
+    obs = {
+        "character_positions": [{"agent_idx": 0, "x": 40.5, "y": -82.5}],
+        "game_info": {"tick": 2661, "time": 44.35, "speed": 10},
+        "score": 2.0,
+        "automated_score": -3.0,
+        "serialized_functions": [{"name": "feed_furnaces"}, "build_drill"],
+    }
+    rendered = render_observation(obs)
+    assert body_of(rendered, "CHARACTER") == ["position (40.5, -82.5)"]
+    assert body_of(rendered, "GAME") == [
+        "tick 2661 (44 s game time), production score 2, automated -3"
+    ]
+    assert body_of(rendered, "FUNCTIONS") == ["feed_furnaces, build_drill"]
+
+
+def test_multiline_execution_output_stays_inside_its_section():
+    rendered = render_observation({"raw_text": "1: ('a',)\n2: ('b',)"})
+    assert body_of(rendered, "EXECUTION") == ["output: 1: ('a',)", "2: ('b',)"]
+    assert sections(rendered)[-1] == "EXECUTION"
+
+
+def test_recorded_enum_strings_render_as_bare_names():
+    obs = {
+        "entities": [
+            {"name": "d", "status": "EntityStatus.NO_FUEL", "direction": "Direction.DOWN"}
+        ]
+    }
+    assert body_of(render_observation(obs), "ENTITIES") == ["d facing DOWN [NO_FUEL]"]

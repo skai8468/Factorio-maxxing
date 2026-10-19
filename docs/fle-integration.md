@@ -393,6 +393,25 @@ corrected tests fail against the old code.
   across steps is new information, not confirmed against 0.4.3. Slow mode is never
   measured, but a watched agent reading `player_location` is misinformed.
 
+### Policy code can reach the game instance - measured 2026-10-20 (D66)
+
+FLE's namespace hands every submitted program the live `FactorioInstance` as the name
+`instance` (probe: `type(instance).__name__` -> `FactorioInstance`, and
+`hasattr(instance, 'rcon_client')` -> True). Through `instance.rcon_client.send_command`
+a program can run any Lua as an admin - spawn items, finish research, launch a rocket -
+and through `instance.namespaces[0]` it reaches FLE's admin tools (`_set_inventory`,
+`_clear_entities`, ...), which are *not* reachable by name on their own. Chadmonk's
+rocket run leaned on exactly this route (`lab.insert`, `create_entity`, the research
+queue, `launch_rocket()` over RCON). FLE's own agent has the same hole.
+
+The harness refuses any program that mentions `instance`, `rcon`, `send_command`, a
+console command (`"/c ..."`, `"/sc ..."`, `"/silent-command ..."`) or dunder
+introspection (`__globals__`, `__class__`, `__subclasses__`, ...): it is not submitted,
+and the step returns the previous observation with the refusal as its error
+(`loop.FORBIDDEN`). Verified live: a program inserting labs over RCON was refused and
+the inventory stayed empty. A deliberately obfuscated name (`globals()["inst" +
+"ance"]`) would still get through - the guard closes the obvious route, not every route.
+
 ## Gym interface
 
 ### `fle/env/gym_env/action.py`

@@ -82,7 +82,7 @@ def test_summarize_totals_each_role_policy_first():
 def test_the_summary_says_the_cost_is_an_estimate():
     lines = format_summary(summarize([call(inp=1_000_000)]))
     assert "estimated" in lines[0]
-    assert lines[-1].strip() == "total    ~$1.00"
+    assert lines[-1].strip() == "total      ~$1.00"
 
 
 def test_an_unpriced_model_is_named_and_the_total_marked_partial():
@@ -110,3 +110,37 @@ def test_main_prices_a_trajectory_file(tmp_path, capsys):
 def test_main_without_a_path_is_a_usage_error(capsys):
     assert main([]) == 2
     assert "usage" in capsys.readouterr().err
+
+
+# --- D64/D66: the grid's models -----------------------------------------------------
+
+
+def _call(model, input_tokens, output_tokens=0, read=0, write=0):
+    return {
+        "type": "llm_call",
+        "model": model,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cache_read_tokens": read,
+        "cache_write_tokens": write,
+    }
+
+
+def test_haiku_5_5_is_priced_at_its_short_prompt_rate():
+    cost = call_cost(_call("claude-haiku-5-5", 50_000, 2_000, read=40_000))
+    assert cost == pytest.approx((10_000 * 0.10 + 40_000 * 0.01 + 2_000 * 0.50) / 1e6)
+
+
+def test_haiku_5_5_above_100k_input_tokens_is_billed_five_times():
+    cost = call_cost(_call("claude-haiku-5-5", 120_000, 1_000))
+    assert cost == pytest.approx((120_000 * 0.50 + 1_000 * 2.50) / 1e6)
+
+
+def test_gpt_6_luna_is_priced_through_openrouter():
+    cost = call_cost(_call("open-router-openai/gpt-6-luna", 10_000, 1_000))
+    assert cost == pytest.approx((10_000 * 0.10 + 1_000 * 0.50) / 1e6)
+
+
+def test_opus_5_5_thinking_bills_as_output():
+    cost = call_cost(_call("claude-opus-5-5", 1_000, 3_000))
+    assert cost == pytest.approx((1_000 * 4.00 + 3_000 * 20.00) / 1e6)

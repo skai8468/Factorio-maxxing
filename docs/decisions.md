@@ -2268,3 +2268,64 @@ GPT 6 Luna ~$1 per run.
 **E0 consequence.** The planned "$X budget stop" becomes a **step cap** (the existing
 `max_steps`, set to 300) plus a **$50 spend ceiling** computed from raw tokens and the
 pricing table at runtime (D55 - still no dollars stored in trajectories).
+
+---
+
+## D66 - The standard harness is the M1 harness upgraded with FLE's strengths
+
+**Decision (research lead, 2026-10-20).** Rather than replicate FLE's agent with FLE's
+own classes (D64 item 1), the standard harness keeps the M1 harness and adds, in this
+repository's own code, what the comparison found FLE's agent gives a model that M1 did
+not. **Supersedes D64 item 1**; the claim is "a baseline modelled on FLE's published
+agent", not a replication.
+
+| Added | From FLE | Where |
+|---|---|---|
+| Standing instructions: state, next step, actions; modular code of at most 50 lines; track entities; don't break working systems; FLE's game tips | `GYM_AGENT_INSTRUCTIONS`, adapted (MIT) | `context.HOW_TO_PLAY`, in the cached part beside the API reference |
+| Every entity, with fuel, contents, recipe, research, resources mined, pickup/drop positions and warnings; collapsing by name and status above 150, problems first | `BasicObservationFormatter`'s full entity strings | `rendering._render_entities` |
+| Character position, game tick/time, production score, saved functions | the same formatter's fields | `CHARACTER`, `GAME`, `FUNCTIONS` sections |
+| History entries without entity lists | `<STALE_ENTITY_DATA_OMITTED/>` | `render_observation(include_entities=False)` |
+| 8 verbatim steps plus a running report, rewritten every 8 steps by the policy's model: existing structures with positions, error tips, utility functions | `RecursiveReportFormatter` and its `DEFAULT_INSTRUCTIONS` | `history_report.py`; `report` records; `summarizer` llm_calls |
+
+**Kept from M1, and ours:** research shown by name (D49 - FLE's published runner hides
+research); the goal section; human guidance pinned verbatim (D12); the verifier and
+stuck detector, which read the full rendering.
+
+**Infrastructure in the same change.**
+
+- *Admin-access guard.* Policy code can reach `instance`, hence RCON and FLE's admin tools
+  (measured; fle-integration.md). A program mentioning `instance`, RCON, a console
+  command or dunder introspection is not submitted; the step returns the previous
+  observation with the refusal as its error, and still counts as a step.
+- *Output ceiling 16,000 tokens* (FLE: 4,096): Opus 5.5 and Haiku 5.5 always think, and
+  thinking counts against the ceiling. Temperature is never sent; effort stays at each
+  model's default (D64).
+- *Pricing:* Haiku 5.5 with its above-100K-token tier, and GPT 6 Luna - confirmed from
+  OpenRouter's listing for `openai/gpt-6-luna` ($0.10 / $0.50, cache read $0.01, write
+  $0.125), reached as `open-router-openai/gpt-6-luna`.
+- *`--dump-prompts DIR`* writes every prompt the policy's model receives, one file per
+  call, so what a model read can be audited exactly.
+
+**Measured live (2026-10-20, `configs/live-measured.json`, policy model = verifier
+model, no human).**
+
+| Run | Steps | Cost | Notes |
+|---|---|---|---|
+| Haiku 5.5, "Research automation" (`20261020T011318-adfb3e7e`) | 20 | ~$0.06 | Policy input levels at ~59.6k tokens per step - far below the 100K tier; ~1.7k output tokens per step; reports at steps 7 and 15; Scorer rung 5 |
+| Haiku 5.5, goal 3 (`20261020T012814-8710e8fc`) | 9 | ~$0.02 | Done; Scorer rung 4 (drill feeding a furnace) |
+| GPT 6 Luna via OpenRouter (`20261020T012007-4f88ff2f`) | 10 | ~$0.01 | Caching works (271k of 323k input tokens read from cache); Scorer rung 5 |
+| Opus 5.5 (`20261020T012303-8d5a231c`) | 5 | ~$0.62 | Includes the one-off cache write; ~1.85k output tokens per step. Steam power and a working lab by step 4 (Scorer rung 8) through ordinary API calls |
+| Guard probe | 1 | - | A program inserting labs over RCON was refused; inventory unchanged |
+
+Projected per 300-step run: Haiku 5.5 ~$1, GPT 6 Luna ~$0.40, Opus 5.5 ~$25-30 (within
+D65's $50 ceiling).
+
+**Prompt, before and after** - step 10 of the Haiku 5.5 run, the same game state built
+by the pre-D66 code and by this one (`trajectories/prompt-compare/`, not committed):
+both ~145k characters (~36k tokens), spent differently. History 19.0k -> 14.9k characters
+(8 steps, no entity lists) plus a 2.5k report covering steps 0-7; the current
+observation 0.8k -> 1.5k (fuel, contents, mined resources, drop positions, warnings,
+position, game time); +2.1k of standing instructions, cached.
+
+**Not frozen yet.** The `standard-harness-v1` tag waits for the research lead (D65: the
+pilot's Opus runs only count as grid data if the standard harness is frozen first).

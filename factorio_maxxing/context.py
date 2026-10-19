@@ -13,15 +13,59 @@ from collections.abc import Sequence
 from factorio_maxxing.goal import Goal
 from factorio_maxxing.llm import Prompt
 
-HISTORY_WINDOW = 16
-"""Steps of history shown to the policy. Matches FLE's RecursiveReportFormatter
-chunk size so a later baseline comparison stays apples-to-apples."""
+HISTORY_WINDOW = 8
+"""Steps of history shown verbatim. FLE's agent keeps its last 16 *messages* - 8 steps,
+each a program and its result - and a report of everything older; the M1 harness had
+mistaken that for 16 steps and dropped the rest (D66). Older steps reach the policy
+through the HISTORY REPORT."""
+
+HOW_TO_PLAY = """You play Factorio by writing Python programs that call the game API
+documented below. Each step you send one program. It runs in the game, and you then
+see what it printed and how the game changed. Variables and functions you define
+persist between steps.
+
+Response format:
+1. PLANNING - think it through in prose:
+   - State: what is the current game state? What resources and entities do you have?
+   - Next step: what is the most useful next step of reasonable size, and why?
+   - Actions: what specific actions does it need, and what resources do they require?
+2. POLICY - exactly one fenced python block containing only the code to run now.
+
+Best practices:
+- Keep each program small and modular: at most 50 lines, one clear purpose, easy to
+  debug and modify.
+- Build incrementally and verify each step. Inspect the game state before changing it.
+- Track entities across inventories, watch for missing requirements, and do not break
+  structures that already work.
+- Write direct interpreter commands; only wrap code in a function when it is a utility
+  you will reuse.
+- Do not repeat steps that already succeeded - continue from where you left off.
+
+Reading the observation:
+- INVENTORY is what you carry. CHARACTER is where you stand: you can only place and
+  reach things close to you, so move first.
+- ENTITIES lists everything you have built, with position, status, fuel, contents and
+  warnings. Read the warnings to see why something is not working.
+- RESEARCH, FLOWS (production), FUNCTIONS (utilities you defined), GAME (time and
+  score) and EXECUTION (what your last program printed, including errors).
+- HISTORY REPORT summarises steps older than RECENT HISTORY.
+- HUMAN GUIDANCE, when present, is advice from a human expert who can see the game.
+
+Factorio tips:
+- Use transport belts to keep burner machines fed with coal.
+- Your inventory holds roughly 2000 items; if it fills up, put items into a chest.
+- Arrange the factory on a grid, and consider the long-term effect of each layout.
+- Fuel boilers manually."""
+"""Standing instructions, adapted from FLE's ``GYM_AGENT_INSTRUCTIONS``
+(fle/agents/gym_agent.py, MIT - see configs/FLE_LICENSE) to this harness's sections
+(D66). Stable across a run, so they sit in the cached part beside the API reference."""
 
 POLICY_INSTRUCTIONS = """Work towards the goal one step at a time.
 First give a short PLANNING note: what you will do next, and why.
 Then give exactly one fenced python block containing only the code to run now.
 Keep the code under 50 lines, and prefer a small verifiable step over a long script.
 Do not repeat steps that have already succeeded."""
+"""The closing reminder: the response format, restated where the model reads last."""
 
 
 def build_prompt(
@@ -33,6 +77,8 @@ def build_prompt(
     *,
     api_reference: str = "",
     history_length: int = HISTORY_WINDOW,
+    report: str = "",
+    report_until: int | None = None,
 ) -> Prompt:
     """Assemble the policy prompt.
 
@@ -50,12 +96,24 @@ def build_prompt(
     rather than hard-coded because the authority on that surface is the environment,
     not this module. It renders first, being the most stable content across a goal,
     and is returned as the prompt's cached part so a provider can cache it (D51).
+
+    The standing instructions (``HOW_TO_PLAY``) open the cached part, ahead of the API
+    reference: both are identical on every step of a run (D66).
+
+    ``report`` is the running summary of steps up to ``report_until``, written by
+    ``history_report`` every few steps (D66); empty until the first one exists.
     """
-    cached = ""
+    cached_blocks = [_section("HOW TO PLAY", HOW_TO_PLAY.splitlines())]
     if api_reference.strip():
-        cached = _section("ENVIRONMENT API", api_reference.splitlines())
+        cached_blocks.append(_section("ENVIRONMENT API", api_reference.splitlines()))
+    cached = "\n\n".join(cached_blocks)
     blocks = [_goal_block(goal)]
 
+    if report.strip():
+        header = "HISTORY REPORT"
+        if report_until is not None:
+            header += f" (steps 0-{report_until})"
+        blocks.append(_section(header, report.splitlines()))
     if history:
         blocks.append(_history_block(history, history_length))
     if errors:
@@ -79,6 +137,8 @@ def build(
     *,
     api_reference: str = "",
     history_length: int = HISTORY_WINDOW,
+    report: str = "",
+    report_until: int | None = None,
 ) -> str:
     """The policy prompt as the exact text the model reads: ``str(build_prompt(...))``."""
     return str(
@@ -90,6 +150,8 @@ def build(
             errors,
             api_reference=api_reference,
             history_length=history_length,
+            report=report,
+            report_until=report_until,
         )
     )
 

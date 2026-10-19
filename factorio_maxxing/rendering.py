@@ -6,36 +6,69 @@ about goals, so compact/full/compressed variants can be compared later without
 touching the environment or LLM interfaces.
 
 Observation keys follow the FLE schema recorded in docs/fle-integration.md.
+
+Since D66 the entity section carries what FLE's own agent sees - every entity, with its
+fuel, contents, recipe, drop position and warnings - and the observation adds the
+character's position, game time and score, and the agent's saved functions. History
+renders the same observation without entities (``include_entities=False``), FLE's
+"stale entity data" trimming: only the current step pays for the entity list.
 """
 
+import re
+from collections import defaultdict
 from enum import Enum
 from typing import Any
 
 EMPTY = "(none)"
-MAX_ENTITIES = 32
-"""Entity lines rendered before truncation. A large base would otherwise dominate the
-policy's context; the remainder is summarised as a count."""
+MAX_ENTITIES = 150
+"""Entities rendered in full detail. Beyond this, entities without a problem (status
+WORKING or NORMAL, no warnings) collapse into one line per name and status, with a count
+and a few positions; entities with a problem are always detailed first (D66)."""
+GROUP_POSITIONS = 6
+"""Positions listed on a collapsed line before the rest are counted."""
 MAX_TECHNOLOGIES = 32
-"""Researched technology names rendered before truncation, for the same reason."""
+"""Researched technology names rendered before truncation."""
+STALE_ENTITIES = "(omitted - the current observation lists every entity)"
+"""What a history entry shows instead of its stale entity list (D66)."""
 
 
-def render_observation(obs: dict[str, Any], *, max_entities: int = MAX_ENTITIES) -> str:
+def render_observation(
+    obs: dict[str, Any],
+    *,
+    max_entities: int = MAX_ENTITIES,
+    include_entities: bool = True,
+) -> str:
     """Render an observation as compact labelled sections.
 
     Every section header is always emitted, with ``(none)`` where the observation
-    carries nothing, so the policy sees a stable structure across steps.
+    carries nothing, so the policy sees a stable structure across steps. With
+    ``include_entities=False`` the entity section says it was omitted, for history
+    entries whose entity data is stale.
     """
+    entities = (
+        _render_entities(obs.get("entities"), max_entities)
+        if include_entities
+        else [STALE_ENTITIES]
+    )
     sections = (
         ("INVENTORY", _render_inventory(obs.get("inventory"))),
-        ("ENTITIES", _render_entities(obs.get("entities"), max_entities)),
+        ("CHARACTER", _render_character(obs.get("character_positions"))),
+        ("ENTITIES", entities),
         ("RESEARCH", _render_research(obs.get("research"))),
         ("FLOWS", _render_flows(obs.get("flows"))),
+        ("FUNCTIONS", _render_functions(obs.get("serialized_functions"))),
+        ("GAME", _render_game(obs)),
         ("EXECUTION", _render_execution(obs)),
     )
     lines: list[str] = []
     for header, body in sections:
         lines.append(header)
-        lines.extend(f"  {line}" for line in (body or [EMPTY]))
+        # Execution output spans lines; indenting each keeps it inside its section.
+        lines.extend(
+            f"  {part}"
+            for line in (body or [EMPTY])
+            for part in line.splitlines() or [""]
+        )
     return "\n".join(lines)
 
 
@@ -125,15 +158,24 @@ def _render_inventory(inventory: Any) -> list[str]:
     return [] if rendered == EMPTY else [rendered]
 
 
+_ENUM_STRING = re.compile(r"^[A-Z][A-Za-z]+\.([A-Z][A-Z0-9_]*)$")
+
+
 def _label(value: Any) -> str:
     """Render an enum by its bare name: ``EntityStatus.NO_FUEL`` becomes ``NO_FUEL``.
 
-    A live observation carries real Python objects, not JSON, so entity direction and
-    status arrive as enum members whose ``str()`` includes the class name.
+    A live observation carries real Python objects, so direction and status arrive as
+    enum members whose ``str()`` includes the class name; a recorded one carries the
+    same thing as a string, ``"EntityStatus.WORKING"``.
     """
     if isinstance(value, Enum):
         return str(value.name)
-    return str(value)
+    text = str(value)
+    match = _ENUM_STRING.match(text)
+    return match.group(1) if match else text
+
+
+_COORDINATES = re.compile(r"\bx\s*=\s*(-?[\d.]+)[,\s]+y\s*=\s*(-?[\d.]+)")
 
 
 def _render_position(position: Any) -> str:
@@ -141,6 +183,13 @@ def _render_position(position: Any) -> str:
         return f"({_format_number(position['x'])}, {_format_number(position['y'])})"
     if isinstance(position, list | tuple) and len(position) == 2:
         return f"({_format_number(position[0])}, {_format_number(position[1])})"
+    if isinstance(position, str):
+        # A recorded observation carries FLE's string form, "x=3.0 y=-73.0".
+        match = _COORDINATES.search(position)
+        if match:
+            x, y = (float(v) for v in match.groups())
+            return f"({_format_number(x)}, {_format_number(y)})"
+        return position
     # A live observation carries Position objects rather than dicts.
     x, y = getattr(position, "x", None), getattr(position, "y", None)
     if x is not None and y is not None:
@@ -148,29 +197,142 @@ def _render_position(position: Any) -> str:
     return str(position)
 
 
+ENTITY_DETAILS: tuple[tuple[str, str], ...] = (
+    ("fuel", "fuel"),
+    ("inventory", "contents"),
+    ("furnace_source", "in"),
+    ("furnace_result", "out"),
+    ("assembling_machine_input", "in"),
+    ("assembling_machine_output", "out"),
+    ("lab_input", "in"),
+    ("recipe", "recipe"),
+    ("research", "researching"),
+    ("resources", "mining"),
+    ("pickup_position", "picks up at"),
+    ("drop_position", "drops at"),
+    ("warnings", "warnings"),
+)
+"""Entity fields shown after name, position, direction and status, in this order - the
+detail FLE's own agent sees (D66). Empty values are skipped."""
+
+_RESOURCE = re.compile(r"name='([^']+)'(?:\s+count=(\d+))?")
+OK_STATUSES = frozenset({"WORKING", "NORMAL"})
+
+
+def _detail_value(key: str, value: Any) -> str:
+    if key.endswith("_position"):
+        return _render_position(value)
+    if key == "warnings":
+        return "; ".join(str(w) for w in value) if isinstance(value, list) else str(value)
+    if key == "resources" and isinstance(value, list):
+        parts = []
+        for item in value:
+            match = _RESOURCE.search(str(item))
+            if match and match.group(2):
+                parts.append(f"{match.group(1)} ({match.group(2)} left)")
+            else:
+                parts.append(match.group(1) if match else str(item))
+        return ", ".join(parts)
+    if isinstance(value, dict):
+        return _render_counts(value)
+    return _label(value)
+
+
+def _entity_line(entity: dict[str, Any]) -> str:
+    line = str(entity.get("name", "unknown"))
+    if "position" in entity:
+        line += f" at {_render_position(entity['position'])}"
+    if entity.get("direction") is not None:
+        line += f" facing {_label(entity['direction'])}"
+    if entity.get("status") is not None:
+        line += f" [{_label(entity['status'])}]"
+    details = []
+    for key, label in ENTITY_DETAILS:
+        value = entity.get(key)
+        if value in (None, "", [], {}):
+            continue
+        rendered = _detail_value(key, value)
+        if rendered and rendered != EMPTY:
+            details.append(f"{label} {rendered}")
+    return " | ".join([line, *details])
+
+
+def _status(entity: dict[str, Any]) -> str:
+    return _label(entity["status"]) if entity.get("status") is not None else ""
+
+
+def _has_problem(entity: dict[str, Any]) -> bool:
+    status = _status(entity)
+    return bool(entity.get("warnings")) or (bool(status) and status not in OK_STATUSES)
+
+
 def _render_entities(entities: Any, max_entities: int) -> list[str]:
+    """Every entity, in full detail up to ``max_entities``. Beyond that, entities
+    without a problem collapse by name and status, and problems are listed first, so a
+    large base stays readable without hiding what is broken (D66)."""
     if not isinstance(entities, list) or not entities:
         return []
+    records = [e for e in entities if isinstance(e, dict)]
+    others = [str(e) for e in entities if not isinstance(e, dict)]
+    if len(records) <= max_entities:
+        return [_entity_line(e) for e in records] + others
 
-    lines = []
-    for entity in entities[:max_entities]:
-        if not isinstance(entity, dict):
-            lines.append(str(entity))
-            continue
-        name = entity.get("name", "unknown")
-        line = name
-        if "position" in entity:
-            line += f" at {_render_position(entity['position'])}"
-        if entity.get("direction") is not None:
-            line += f" facing {_label(entity['direction'])}"
-        if entity.get("status") is not None:
-            line += f" [{_label(entity['status'])}]"
-        lines.append(line)
+    problems = [e for e in records if _has_problem(e)]
+    healthy = [e for e in records if not _has_problem(e)]
+    detailed, collapsed = problems[:max_entities], problems[max_entities:] + healthy
+    groups: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for entity in collapsed:
+        groups[(str(entity.get("name", "unknown")), _status(entity))].append(entity)
 
-    hidden = len(entities) - max_entities
-    if hidden > 0:
-        lines.append(f"... and {hidden} more")
-    return lines
+    lines = [_entity_line(e) for e in detailed]
+    for (name, status), members in groups.items():
+        where = [
+            _render_position(m["position"])
+            for m in members[:GROUP_POSITIONS]
+            if "position" in m
+        ]
+        if len(members) > GROUP_POSITIONS:
+            where.append(f"+{len(members) - GROUP_POSITIONS} more")
+        line = f"{name} x{len(members)}" + (f" [{status}]" if status else "")
+        lines.append(f"{line} at {', '.join(where)}" if where else line)
+    return lines + others
+
+
+def _render_character(positions: Any) -> list[str]:
+    """Where the agent stands; placement reach is measured from here."""
+    if isinstance(positions, list):
+        for entry in positions:
+            if isinstance(entry, dict) and "x" in entry and "y" in entry:
+                return [f"position {_render_position(entry)}"]
+    return []
+
+
+def _render_functions(functions: Any) -> list[str]:
+    """Functions the agent has defined in earlier steps and can call again."""
+    if not isinstance(functions, list) or not functions:
+        return []
+    names = [
+        str(item.get("name") or item) if isinstance(item, dict) else str(item)
+        for item in functions
+    ]
+    return [", ".join(names)]
+
+
+def _render_game(obs: dict[str, Any]) -> list[str]:
+    info = obs.get("game_info")
+    info = info if isinstance(info, dict) else {}
+    parts = []
+    tick, seconds = info.get("tick"), info.get("time")
+    if isinstance(tick, int | float) and not isinstance(tick, bool):
+        part = f"tick {_format_number(tick)}"
+        if isinstance(seconds, int | float) and not isinstance(seconds, bool):
+            part += f" ({_format_number(round(seconds))} s game time)"
+        parts.append(part)
+    for key, label in (("score", "production score"), ("automated_score", "automated")):
+        value = obs.get(key)
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            parts.append(f"{label} {_format_number(value)}")
+    return [", ".join(parts)] if parts else []
 
 
 def _technology_states(technologies: Any) -> list[tuple[str, Any]]:

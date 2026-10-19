@@ -32,6 +32,7 @@ from factorio_maxxing.envs import (
     RealFactorioEnv,
 )
 from factorio_maxxing.goal import Goal
+from factorio_maxxing.history_report import HistoryReporter
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
 from factorio_maxxing.loop import run_goal
@@ -113,7 +114,11 @@ class Config:
     max_interventions_without_progress: int = 3
     verification_interval: int = 1
     max_steps: int = 32
-    history_length: int = 16
+    history_length: int = 8
+    """Steps shown verbatim; older steps reach the policy through the history report
+    (D66). FLE's agent keeps 8."""
+    history_report_interval: int = 8
+    """Steps between history reports; 0 turns the report off (D66)."""
     environment: str = "mock"
     task_key: str = DEFAULT_TASK_KEY
     """Which FLE task backs a live run. Used only when environment is "live".
@@ -164,6 +169,9 @@ class Config:
     deliver: an agent walked into a nest, died, and lost its whole inventory without
     being told (D53). False leaves the map's enemies alone."""
     trajectory_dir: str = "trajectories"
+    dump_prompts: str = ""
+    """Directory to write every prompt sent to the policy's model into, one file per
+    call, for auditing exactly what a model read. Empty writes nothing."""
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
     means the policy is told nothing about the API and will invent one."""
@@ -235,6 +243,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="non-DONE verdicts in a row before help is requested (D50)",
     )
     parser.add_argument("--history-length", type=int)
+    parser.add_argument(
+        "--history-report-interval",
+        type=int,
+        help="steps between history reports; 0 turns them off (D66)",
+    )
+    parser.add_argument(
+        "--dump-prompts",
+        metavar="DIR",
+        help="write every prompt sent to the policy's model into DIR, one file per call",
+    )
     parser.add_argument("--trajectory-dir")
     parser.add_argument(
         "--api-reference", help="file describing the environment API for the policy"
@@ -286,6 +304,8 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "stuck_threshold": args.stuck_threshold,
         "non_done_threshold": args.non_done_threshold,
         "history_length": args.history_length,
+        "history_report_interval": args.history_report_interval,
+        "dump_prompts": args.dump_prompts,
         "trajectory_dir": args.trajectory_dir,
         "api_reference": args.api_reference,
         "task_key": args.task_key,
@@ -343,8 +363,37 @@ def _build_live_environment(config: Config) -> EnvProtocol:
 
 def build_policy_client(config: Config) -> LLMClient:
     if config.policy_model == STUB_MODEL:
-        return StubLLMClient(DEMO_POLICIES, model=config.policy_model)
-    return _api_client(config.policy_model)
+        client: LLMClient = StubLLMClient(DEMO_POLICIES, model=config.policy_model)
+    else:
+        client = _api_client(config.policy_model)
+    if config.dump_prompts:
+        client = PromptDumpingClient(client, Path(config.dump_prompts))
+    return client
+
+
+def build_reporter(config: Config, policy_client: LLMClient) -> HistoryReporter | None:
+    """The history report uses the policy's own model and client, as FLE's agent does."""
+    if config.history_report_interval < 0:
+        raise ConfigError("history_report_interval must be 0 (off) or positive")
+    if config.history_report_interval == 0:
+        return None
+    return HistoryReporter(policy_client, config.history_report_interval)
+
+
+class PromptDumpingClient:
+    """Writes each prompt to ``directory`` before passing it on, for auditing (D66)."""
+
+    def __init__(self, inner: LLMClient, directory: Path):
+        self.inner = inner
+        self.directory = directory
+        self.calls = 0
+        directory.mkdir(parents=True, exist_ok=True)
+
+    def generate(self, prompt):
+        path = self.directory / f"call-{self.calls:04d}.txt"
+        path.write_text(str(prompt), encoding="utf-8")
+        self.calls += 1
+        return self.inner.generate(prompt)
 
 
 def build_verifier(config: Config):
@@ -395,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
         goal = Goal(description=args.goal, max_steps=config.max_steps, notes=args.notes)
         env = build_environment(config)
         policy_client = build_policy_client(config)
+        reporter = build_reporter(config, policy_client)
         verifier = build_verifier(config)
         human = build_human(config, args.hints)
         detector = build_detector(config)
@@ -420,6 +470,7 @@ def main(argv: list[str] | None = None) -> int:
                 verification_interval=config.verification_interval,
                 history_length=config.history_length,
                 max_interventions=config.max_interventions_without_progress,
+                reporter=reporter,
             )
     except KeyboardInterrupt:
         # The steps already taken were paid for: report them before exiting.

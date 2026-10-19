@@ -14,12 +14,15 @@ Two counters, per D12:
   no progress signal defined at M0/M1 this is a hard cap on interventions per goal.
 """
 
+import logging
+import re
 from collections.abc import Sequence
 from typing import Any
 
 from factorio_maxxing import context
 from factorio_maxxing.envs import Action, EnvProtocol
 from factorio_maxxing.goal import Goal, GoalResult
+from factorio_maxxing.history_report import HistoryReporter
 from factorio_maxxing.human import HumanProtocol
 from factorio_maxxing.llm import LLMClient, extract_policy
 from factorio_maxxing.rendering import render_observation
@@ -33,14 +36,51 @@ FLE_ERROR_FLAG = "error_occurred"
 FLE_ERROR_TEXT = "result"
 
 
+FORBIDDEN = re.compile(
+    r"\binstance\b|rcon|send_command"
+    r"|__globals__|__builtins__|__subclasses__|__dict__|__class__|__mro__"
+    r"|[\"']\s*/(?:c|sc|silent-command|command)\b"
+)
+"""Ways out of the game's rules (D66). FLE's namespace hands policy code ``instance``,
+the live ``FactorioInstance``: through ``instance.rcon_client`` a program can run any
+Lua as an admin - spawn items, finish research - and through ``instance.namespaces`` it
+reaches FLE's admin tools (measured 2026-10-20; the admin tools are not reachable by
+name). Dunder introspection is how a program would rebuild those names indirectly."""
+
+BLOCKED = (
+    "Blocked by the harness: this program refers to {found!r}. The game instance, RCON "
+    "and console commands give admin access to the game and are not available; use the "
+    "API functions instead. The program was not run."
+)
+
+
+def forbidden_access(policy: str) -> str | None:
+    """The first forbidden reference in a program, or None if it may run."""
+    match = FORBIDDEN.search(policy or "")
+    return match.group(0) if match else None
+
+
 def execute_policy(
-    policy: str, env: EnvProtocol
+    policy: str, env: EnvProtocol, last_observation: dict[str, Any] | None = None
 ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
     """Submit a policy to the environment and observe the result.
 
-    Thin at M0. This is the boundary where repair strategies attach in later scope
-    (architecture.md, extension points); it is not the place for them now.
+    A program that reaches for admin access is not submitted (D66): the step returns
+    the previous observation unchanged, with the refusal as its execution error, and
+    still counts as a step. This is also the boundary where repair strategies attach
+    in later scope (architecture.md, extension points).
     """
+    found = forbidden_access(policy)
+    if found is not None:
+        message = BLOCKED.format(found=found)
+        observation = {**(last_observation or {}), "raw_text": message}
+        return (
+            observation,
+            0.0,
+            False,
+            False,
+            {FLE_ERROR_FLAG: True, FLE_ERROR_TEXT: message},
+        )
     return env.step(Action(code=policy))
 
 
@@ -80,15 +120,22 @@ def run_goal(
     history_length: int = context.HISTORY_WINDOW,
     verification_window: int = VERIFICATION_WINDOW,
     max_interventions: int = MAX_INTERVENTIONS,
+    reporter: HistoryReporter | None = None,
 ) -> GoalResult:
     """Run one goal to completion, failure, or abort.
 
     Returns as soon as the verifier says DONE, with no further policy call.
+
+    History entries carry each step's observation rendered without entities - only the
+    current observation lists them (D66). With a ``reporter``, a history report is
+    rewritten after every ``reporter.interval`` steps and shown to the policy; its
+    call is recorded as a ``summarizer`` llm_call and its text as a ``report`` record.
     """
     observation = env.reset()
     rendered = render_observation(observation)
 
     history: list[tuple[str, str]] = []
+    report, report_until = "", None
     guidance: list[str] = []
     verifications: list[Any] = []
     errors: list[str] = []
@@ -119,12 +166,17 @@ def run_goal(
             _latest_errors(errors),
             api_reference=api_reference,
             history_length=history_length,
+            report=report,
+            report_until=report_until,
         )
         response = policy_client.generate(prompt)
         policy = extract_policy(response.text)
 
-        observation, reward, terminated, truncated, info = execute_policy(policy, env)
+        observation, reward, terminated, truncated, info = execute_policy(
+            policy, env, observation
+        )
         rendered = render_observation(observation)
+        compact = render_observation(observation, include_entities=False)
         step_errors = execution_errors(observation, info)
 
         recorder.record_step(step, goal, policy, observation, reward, step_errors)
@@ -142,7 +194,20 @@ def run_goal(
                 return result(True, step + 1, verdict.reason)
 
         window.append(rendered)
-        history.append((policy, rendered))
+        history.append((policy, compact))
+
+        if reporter is not None and reporter.due(step):
+            first = 0 if report_until is None else report_until + 1
+            steps = [(i, *history[i]) for i in range(first, step + 1)]
+            try:
+                written = reporter.update(report, steps, rendered)
+            except Exception as error:  # noqa: BLE001 - memory must not end a run
+                logging.warning("history report failed at step %d: %s", step, error)
+            else:
+                recorder.record_llm_call(step, "summarizer", written)
+                if written.text.strip():
+                    report, report_until = written.text.strip(), step
+                    recorder.record_report(step, report)
 
         if terminated or truncated:
             state = "terminated" if terminated else "truncated"
