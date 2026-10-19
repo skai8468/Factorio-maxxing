@@ -2125,3 +2125,37 @@ shared with the renderer. Malformed observations are skipped, not fatal.
   kit containing a ladder item would credit it. The current kit (3 burner drills, 2 stone
   furnaces) credits none, and the grid uses one kit for every run (5a).
 - The ladder itself is still a draft; any change bumps `LADDER_VERSION`.
+
+---
+
+## D63 - Fast mode is made watchable from the watcher side: glide camera, action cues, HUD
+
+**Decision (research lead, 2026-10-19).** Fast mode stays (no factorioctl-style real-time
+actions). `factorio_maxxing.watch` makes it watchable without touching the run:
+
+- **Camera:** once a client has joined, an `on_nth_tick(1)` handler glides every watcher
+  15% of the way to the agent each tick (snapping beyond 60 tiles), replacing D59's
+  10 Hz teleport; watchers get zoom 0.75 and alt-mode.
+- **Action cues:** every 6 ticks, inventory changes on the agent become flying text
+  (`+5 [item=iron-ore]`); every 30 ticks, own-force entities within 40 tiles are diffed,
+  new ones highlighted and labelled "placed", vanished ones "picked up"; jumps over 3
+  tiles draw a fading trail.
+- **HUD:** the watcher tails the newest trajectory written since it started and rebuilds
+  a watcher-only GUI panel: step, model, estimated spend, help requests, goal, the
+  policy's first comment as its intent, last error, latest verdict, and the human's
+  latest guidance verbatim (cut at 320 characters).
+
+**Constraints it obeys.** FLE owns `on_tick` (registered twice), and Factorio keeps one
+handler per event, so the camera uses `on_nth_tick(1)` (FLE uses 5, 15, 60). The body
+runs under `pcall`, because an error in an event kills a headless server (D48). State
+lives in plain Lua globals, never `storage` (D43). The handler is installed only after a
+client joins - a console-registered handler is missing from the save a joiner loads -
+and a heartbeat global lets the watcher reinstall it after a server restart. Every
+drawing passes `players`, so only watchers see it; nothing changes an entity, an
+inventory or game timing.
+
+**Limit.** A help request reaches the HUD only once answered, because the intervention
+record is written after the reply.
+
+**Status.** Offline tests only; **live verification pending** (a client must join to see
+the camera, cues and HUD).

@@ -1,17 +1,32 @@
-"""Tests for the live-watching camera (decisions.md D45, D47, D59).
+"""Tests for watching a live run (decisions.md D45, D47, D59, D63).
 
-The Lua itself was exercised against a live cluster; these pin the Python around it:
-what is sent, when it logs, and that a failure never stops the camera.
+The Lua itself is exercised against a live cluster; these pin the Python around it and
+the properties of the Lua that keep a run safe: what is sent and when, that nothing
+touches FLE's handlers or ``storage``, that drawings are for watchers only, and that a
+failure never stops the watcher.
 """
 
+import json
 import logging
+import os
 import subprocess
 import sys
 
 import pytest
 
 from factorio_maxxing import watch
-from factorio_maxxing.watch import FOLLOW_LUA, follow_once
+from factorio_maxxing.watch import (
+    CHECK_LUA,
+    CameraSettings,
+    HudState,
+    TrajectoryTail,
+    camera_lua,
+    check_once,
+    hud_lines,
+    hud_lua,
+    intent_of,
+    last_error_line,
+)
 
 
 class FakeRCON:
@@ -21,10 +36,14 @@ class FakeRCON:
 
     def __call__(self, command):
         self.sent.append(command)
-        response = self.responses.pop(0)
+        response = self.responses.pop(0) if self.responses else ""
         if isinstance(response, Exception):
             raise response
         return response
+
+
+def quiet(_):
+    return None
 
 
 def test_importing_watch_does_not_import_fle():
@@ -35,98 +54,131 @@ def test_importing_watch_does_not_import_fle():
     assert result.stdout.strip() == "False"
 
 
-def test_follow_lua_is_a_single_line():
-    assert "\n" not in FOLLOW_LUA
+# --- The check -----------------------------------------------------------------------
 
 
-def test_follow_lua_stands_god_mode_watchers_on_the_agent():
-    """D59: remote view needs vision the agent does not give; god mode sees the world."""
-    assert "storage.agent_characters[1]" in FOLLOW_LUA
-    assert "game.connected_players" in FOLLOW_LUA
-    assert "p.teleport(c.position, c.surface)" in FOLLOW_LUA
-    assert "defines.controllers.remote" not in FOLLOW_LUA
-    assert "centered_on" not in FOLLOW_LUA
+def test_check_lua_is_a_single_line_without_comments():
+    assert "\n" not in CHECK_LUA and "--" not in CHECK_LUA
 
 
-def test_watchers_are_in_god_mode_before_any_agent_exists():
-    """No character for FLE's reset to destroy - losing one dropped a client (D38)."""
-    assert FOLLOW_LUA.index("defines.controllers.god") < FOLLOW_LUA.index('"no agent"')
-
-
-def test_the_camera_updates_ten_times_a_second():
-    assert watch.DEFAULT_INTERVAL == 0.1
-
-
-def test_pregenerate_generates_the_start_area_when_nobody_is_connected():
-    rcon = FakeRCON(["0", ""])
-    assert watch.pregenerate(rcon) == "generated"
-    assert rcon.sent[1] == watch.PREGENERATE_LUA
-    assert "request_to_generate_chunks({x = 0, y = 0}, 25)" in watch.PREGENERATE_LUA
-    assert "force_generate_chunk_requests()" in watch.PREGENERATE_LUA
-
-
-def test_pregenerate_is_skipped_with_a_client_connected():
-    """A connected client would sit through the stall it exists to avoid."""
-    rcon = FakeRCON(["1"])
-    assert watch.pregenerate(rcon) == "skipped"
-    assert len(rcon.sent) == 1
-
-
-def test_main_generates_the_map_before_following(monkeypatch):
-    order = []
-    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
-    monkeypatch.setattr(
-        watch, "pregenerate", lambda send: order.append("map") or "generated"
-    )
-    monkeypatch.setattr(watch, "watch", lambda send, interval: order.append("follow"))
-    assert watch.main([]) == 0
-    assert order == ["map", "follow"]
-
-
-def test_main_can_skip_map_generation(monkeypatch):
-    def refuse(send):
-        raise AssertionError("must not generate")
-
-    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
-    monkeypatch.setattr(watch, "pregenerate", refuse)
-    monkeypatch.setattr(watch, "watch", lambda send, interval: None)
-    assert watch.main(["--no-pregenerate"]) == 0
-
-
-def test_follow_lua_keeps_watchers_out_of_the_game():
+def test_check_lua_keeps_watchers_out_of_the_game():
     """The human provides text only; the permission group makes the game enforce it."""
-    assert f'create_group("{watch.WATCHER_GROUP}")' in FOLLOW_LUA
-    assert "set_allows_action(a, false)" in FOLLOW_LUA
-    assert "p.permission_group = g" in FOLLOW_LUA
-    # Locked out before the agent is looked up, so a watcher is never free to act.
-    assert FOLLOW_LUA.index("p.permission_group = g") < FOLLOW_LUA.index(
+    assert f'create_group("{watch.WATCHER_GROUP}")' in CHECK_LUA
+    assert "set_allows_action(a, false)" in CHECK_LUA
+    assert "p.permission_group = g" in CHECK_LUA
+    assert CHECK_LUA.index("p.permission_group = g") < CHECK_LUA.index(
         "storage.agent_characters"
     )
 
 
-def test_follow_lua_has_no_unformatted_braces():
-    """FOLLOW_LUA is an f-string; a doubled brace left in would be a Lua syntax error."""
-    assert "{{" not in FOLLOW_LUA and "}}" not in FOLLOW_LUA
-    assert "{type = defines.controllers.god}" in FOLLOW_LUA
+def test_watchers_are_in_god_mode_before_any_agent_exists():
+    """No character for FLE's reset to destroy - losing one dropped a client (D38)."""
+    assert "{type = defines.controllers.god}" in CHECK_LUA
+    assert CHECK_LUA.index("defines.controllers.god") < CHECK_LUA.index('"no agent "')
 
 
-def test_follow_lua_keeps_its_status_strings_intact():
-    for status in watch.STATUS_MESSAGES:
-        assert f'"{status}"' in FOLLOW_LUA
+def test_check_lua_creates_no_global_so_it_is_safe_before_a_join():
+    """A Lua global set before a client joins is missing from the joiner's state."""
+    assert "harness_watch =" not in CHECK_LUA
+    assert "harness_watch_beat" in CHECK_LUA  # read only
 
 
-def test_follow_once_sends_a_silent_command_and_strips_the_reply():
-    rcon = FakeRCON(["following\n"])
-    assert follow_once(rcon) == "following"
-    assert rcon.sent == [f"/sc {FOLLOW_LUA}"]
+@pytest.mark.parametrize(
+    "reply, expected",
+    [
+        ("no client\n", ("no client", False)),
+        ("no agent 0", ("no agent", False)),
+        ("following 1", ("following", True)),
+        ("following 0", ("following", False)),
+        (None, ("", False)),
+        ("something odd", ("something odd", False)),
+    ],
+)
+def test_check_once_parses_status_and_camera(reply, expected):
+    rcon = FakeRCON([reply])
+    assert check_once(rcon) == expected
+    assert rcon.sent == [f"/sc {CHECK_LUA}"]
 
 
-def test_follow_once_treats_no_reply_as_empty():
-    assert follow_once(FakeRCON([None])) == ""
+# --- The camera ----------------------------------------------------------------------
 
 
-def test_watch_checks_once_per_tick_and_sleeps_between(caplog):
-    rcon = FakeRCON(["following"] * 3)
+def test_the_camera_never_takes_fles_on_tick_handler():
+    """FLE registers on_tick itself; one handler per event means taking it switches
+    FLE's off (D63). FLE's nth-tick periods are 5, 15 and 60."""
+    lua = camera_lua(CameraSettings())
+    assert "script.on_nth_tick(1," in lua
+    assert "defines.events.on_tick" not in lua
+    for period in (5, 15, 60):
+        assert f"on_nth_tick({period}" not in lua
+
+
+def test_the_camera_handler_runs_under_pcall():
+    """A script error inside an event kills a headless server (D48)."""
+    lua = camera_lua(CameraSettings())
+    assert "pcall(harness_watch_tick, event)" in lua
+
+
+def test_the_camera_writes_nothing_to_storage():
+    """Lua functions in storage break the save a joining client needs (D43)."""
+    lua = camera_lua(CameraSettings())
+    assert "storage.agent_characters[1]" in lua  # read only
+    assert "storage." not in lua.replace("storage.agent_characters", "")
+
+
+def test_every_drawing_is_for_watchers_only():
+    lua = camera_lua(CameraSettings())
+    for call in (
+        "rendering.draw_line{",
+        "rendering.draw_rectangle{",
+        "rendering.draw_text{",
+    ):
+        start = lua.index(call)
+        assert (
+            "players = players"
+            in lua[start : lua.index("}", lua.index("time_to_live", start))]
+        )
+    assert "create_local_flying_text" in lua
+    assert "create_entity" not in lua and ".insert" not in lua and ".destroy()" not in lua
+
+
+def test_camera_settings_reach_the_lua():
+    lua = camera_lua(CameraSettings(zoom=0.5, glide=0.2, snap=30, cues=False))
+    assert "p.zoom = 0.5" in lua
+    assert "glide = 0.2" in lua and "snap = 30" in lua and "cues = false" in lua
+
+
+def test_camera_lua_is_one_line_without_comments_or_placeholders():
+    lua = camera_lua(CameraSettings())
+    assert "\n" not in lua and "--" not in lua and "$" not in lua
+
+
+# --- The loop ------------------------------------------------------------------------
+
+
+def test_the_camera_is_installed_only_after_a_client_joins():
+    rcon = FakeRCON(["no client", "no client", "no agent 0", "installed", "no agent 1"])
+    watch.watch(rcon, 0, sleep=quiet, ticks=4)
+    installs = [c for c in rcon.sent if "on_nth_tick(1," in c]
+    assert len(installs) == 1
+    assert rcon.sent.index(installs[0]) == 3  # after the third check
+
+
+def test_a_running_camera_is_not_reinstalled():
+    rcon = FakeRCON(["following 1"] * 3)
+    watch.watch(rcon, 0, sleep=quiet, ticks=3)
+    assert not any("on_nth_tick(1," in c for c in rcon.sent)
+
+
+def test_a_dead_camera_is_reinstalled():
+    """A server restart drops runtime handlers; the heartbeat notices."""
+    rcon = FakeRCON(["following 1", "following 0", "installed", "following 1"])
+    watch.watch(rcon, 0, sleep=quiet, ticks=3)
+    assert sum("on_nth_tick(1," in c for c in rcon.sent) == 1
+
+
+def test_watch_checks_once_per_tick_and_sleeps_between():
+    rcon = FakeRCON(["following 1"] * 3)
     sleeps = []
     watch.watch(rcon, 0.5, sleep=sleeps.append, ticks=3)
     assert len(rcon.sent) == 3
@@ -134,9 +186,9 @@ def test_watch_checks_once_per_tick_and_sleeps_between(caplog):
 
 
 def test_watch_logs_only_when_the_status_changes(caplog):
-    rcon = FakeRCON(["no client", "no client", "following", "following", "no agent"])
+    replies = ["no client", "no client", "following 1", "following 1", "no agent 1"]
     with caplog.at_level(logging.INFO):
-        watch.watch(rcon, 0, sleep=lambda _: None, ticks=5)
+        watch.watch(FakeRCON(replies), 0, sleep=quiet, ticks=5)
     assert caplog.messages == [
         watch.STATUS_MESSAGES["no client"],
         watch.STATUS_MESSAGES["following"],
@@ -145,26 +197,204 @@ def test_watch_logs_only_when_the_status_changes(caplog):
 
 
 def test_watch_survives_a_failed_check(caplog):
-    rcon = FakeRCON([ConnectionError("blip"), "following"])
+    rcon = FakeRCON([ConnectionError("blip"), "following 1"])
     with caplog.at_level(logging.INFO):
-        watch.watch(rcon, 0, sleep=lambda _: None, ticks=2)
+        watch.watch(rcon, 0, sleep=quiet, ticks=2)
     assert len(rcon.sent) == 2
     assert caplog.messages == ["error: blip", watch.STATUS_MESSAGES["following"]]
 
 
 def test_watch_reports_an_unknown_status_verbatim(caplog):
     with caplog.at_level(logging.INFO):
-        watch.watch(FakeRCON(["something odd"]), 0, sleep=lambda _: None, ticks=1)
+        watch.watch(FakeRCON(["something odd"]), 0, sleep=quiet, ticks=1)
     assert caplog.messages == ["something odd"]
 
 
-def test_main_rejects_a_non_positive_interval_before_connecting(monkeypatch, capsys):
+# --- The HUD -------------------------------------------------------------------------
+
+
+def write_records(path, records, mode="a"):
+    with path.open(mode, encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record) + "\n")
+
+
+STEP = {
+    "type": "step",
+    "run_id": "r",
+    "step": 13,
+    "goal": "Unlock steam power and build a working steam power setup",
+    "policy": "# Place boiler next to the offshore pump\nplace_entity(Prototype.Boiler)",
+    "observation": {},
+    "execution_errors": [
+        "1: ('\\nException: Could not place boiler at (-5.5, 33.5), No boiler in "
+        "inventory. Current inventory: coal=5',)"
+    ],
+}
+CALL = {
+    "type": "llm_call",
+    "run_id": "r",
+    "step": 13,
+    "role": "policy",
+    "model": "claude-haiku-4-5",
+    "input_tokens": 1000,
+    "output_tokens": 100,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 0,
+}
+HELP = {
+    "type": "intervention",
+    "run_id": "r",
+    "step": 8,
+    "stuck_reason": "x",
+    "text": 'craft the "offshore pump", boiler]] and pipes first',
+    "intervention_index": 0,
+}
+VERDICT = {"type": "verification", "step": 13, "done": False, "reason": "boiler idle"}
+
+
+def test_hud_shows_the_example_lines():
+    state = HudState()
+    state.feed([HELP, STEP, CALL, VERDICT])
+    text = [line for line, _ in hud_lines(state)]
+    assert text[0].startswith("Step 14 · claude-haiku-4-5 · ~$")
+    assert text[0].endswith("help asked 1×")
+    assert text[1].startswith("Goal: Unlock steam power")
+    assert text[2] == "▶ Place boiler next to the offshore pump"
+    assert "No boiler in inventory" in text[3] and text[3].startswith("✗ ")
+    assert text[4] == "? Verifier: not done - boiler idle"
+    assert (
+        text[5] == 'Human (step 9): craft the "offshore pump", boiler]] and pipes first'
+    )
+
+
+def test_hud_shows_a_declined_request_and_a_clean_step():
+    state = HudState()
+    state.feed(
+        [STEP, {**HELP, "text": None}, {**STEP, "step": 14, "execution_errors": []}]
+    )
+    text = [line for line, _ in hud_lines(state)]
+    assert not any(line.startswith("✗") for line in text)
+    assert text[-1] == "Human (step 9): (no guidance)"
+
+
+def test_hud_cuts_long_fields_and_keeps_human_text_verbatim_up_to_its_limit():
+    long = "word " * 200
+    state = HudState()
+    state.feed([{**STEP, "goal": long}, {**HELP, "text": long}])
+    goal = next(line for line, _ in hud_lines(state) if line.startswith("Goal:"))
+    human = next(line for line, _ in hud_lines(state) if line.startswith("Human"))
+    assert goal.endswith("…") and len(goal) <= len("Goal: ") + watch.HUD_WIDTH
+    assert human.endswith("…") and human.startswith("Human (step 9): word word")
+
+
+def test_hud_lua_survives_quotes_and_closing_brackets():
+    lua = hud_lua([('say "hi" ]] and ]=] here', "human")])
+    assert '[==[say "hi" ]] and ]=] here]==]' in lua
+    assert "harness_hud" in lua and "game.connected_players" in lua
+
+
+def test_intent_and_error_extraction():
+    assert intent_of("x = 1\n# not first\n") == "not first"
+    assert intent_of("move_to(p)\n") == "move_to(p)"
+    assert intent_of("") == ""
+    assert last_error_line(STEP["execution_errors"][0]).startswith(
+        "Could not place boiler"
+    )
+    assert last_error_line("") == ""
+
+
+def test_tail_reads_only_appended_lines_and_waits_for_a_complete_line(tmp_path):
+    tail = TrajectoryTail(tmp_path, since=0)
+    run = tmp_path / "20261019T100000-a.jsonl"
+    write_records(run, [STEP])
+    assert tail.poll() == (True, [STEP])
+    assert tail.poll() == (False, [])
+    with run.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(CALL)[:20])
+    assert tail.poll() == (False, [])
+    with run.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(CALL)[20:] + "\n")
+    assert tail.poll() == (False, [CALL])
+
+
+def test_tail_moves_to_the_next_run_and_ignores_older_files(tmp_path):
+    old = tmp_path / "20261018T000000-old.jsonl"
+    write_records(old, [STEP])
+    started = old.stat().st_mtime
+    os.utime(old, (started - 100, started - 100))  # written before the watcher started
+    tail = TrajectoryTail(tmp_path, since=started - 1)
+    assert tail.poll() == (False, [])
+    write_records(tmp_path / "20261019T100000-a.jsonl", [STEP])
+    assert tail.poll()[0] is True
+    write_records(tmp_path / "20261019T110000-b.jsonl", [CALL])
+    switched, records = tail.poll()
+    assert switched and records == [CALL]
+
+
+def test_the_hud_is_pushed_when_the_trajectory_grows(tmp_path):
+    write_records(tmp_path / "20261019T100000-a.jsonl", [STEP, CALL])
+    rcon = FakeRCON(["following 1", "", "following 1"])
+    watch.watch(rcon, 0, tail=TrajectoryTail(tmp_path, since=0), sleep=quiet, ticks=2)
+    huds = [c for c in rcon.sent if "harness_hud" in c]
+    assert len(huds) == 1 and "Step 14" in huds[0]
+
+
+def test_the_hud_waits_for_a_client(tmp_path):
+    write_records(tmp_path / "20261019T100000-a.jsonl", [STEP])
+    rcon = FakeRCON(["no client", "no agent 0", "installed", ""])
+    watch.watch(rcon, 0, tail=TrajectoryTail(tmp_path, since=0), sleep=quiet, ticks=2)
+    assert "harness_hud" not in " ".join(rcon.sent[:1])
+    assert any("harness_hud" in c for c in rcon.sent[1:])
+
+
+# --- main ----------------------------------------------------------------------------
+
+
+def test_pregenerate_generates_the_start_area_when_nobody_is_connected():
+    rcon = FakeRCON(["0", ""])
+    assert watch.pregenerate(rcon) == "generated"
+    assert rcon.sent[1] == watch.PREGENERATE_LUA
+    assert "request_to_generate_chunks({x = 0, y = 0}, 25)" in watch.PREGENERATE_LUA
+
+
+def test_pregenerate_is_skipped_with_a_client_connected():
+    rcon = FakeRCON(["1"])
+    assert watch.pregenerate(rcon) == "skipped"
+    assert len(rcon.sent) == 1
+
+
+def test_main_generates_the_map_before_watching(monkeypatch):
+    order = []
+    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
+    monkeypatch.setattr(watch, "pregenerate", lambda send: order.append("map") or "ok")
+    monkeypatch.setattr(
+        watch, "watch", lambda send, interval, **kw: order.append("watch")
+    )
+    assert watch.main([]) == 0
+    assert order == ["map", "watch"]
+
+
+def test_main_passes_camera_and_hud_options(monkeypatch, tmp_path):
+    seen = {}
+    monkeypatch.setattr(watch, "connect", lambda: FakeRCON([]))
+    monkeypatch.setattr(watch, "watch", lambda send, interval, **kw: seen.update(kw))
+    args = ["--no-pregenerate", "--zoom", "0.5", "--no-cues"]
+    assert watch.main([*args, "--trajectory-dir", str(tmp_path)]) == 0
+    assert seen["camera"] == CameraSettings(zoom=0.5, cues=False)
+    assert seen["tail"].directory == tmp_path
+    assert watch.main([*args, "--no-hud"]) == 0
+    assert seen["tail"] is None
+
+
+@pytest.mark.parametrize("flag", ["--interval", "--zoom"])
+def test_main_rejects_non_positive_values_before_connecting(monkeypatch, capsys, flag):
     def refuse():
         raise AssertionError("must not connect")
 
     monkeypatch.setattr(watch, "connect", refuse)
-    assert watch.main(["--interval", "0"]) == 2
-    assert "--interval" in capsys.readouterr().err
+    assert watch.main([flag, "0"]) == 2
+    assert flag in capsys.readouterr().err
 
 
 def test_main_reports_a_missing_cluster(monkeypatch, capsys):
@@ -179,15 +409,8 @@ def test_main_reports_a_missing_cluster(monkeypatch, capsys):
 def test_main_stops_cleanly_on_interrupt(monkeypatch):
     monkeypatch.setattr(watch, "connect", lambda: FakeRCON(["0", ""]))
 
-    def interrupted(send, interval):
+    def interrupted(send, interval, **kw):
         raise KeyboardInterrupt
 
     monkeypatch.setattr(watch, "watch", interrupted)
     assert watch.main([]) == 0
-
-
-@pytest.mark.parametrize("interval", ["1", "0.25"])
-def test_parser_accepts_an_interval(interval):
-    assert watch.build_parser().parse_args(["--interval", interval]).interval == float(
-        interval
-    )
