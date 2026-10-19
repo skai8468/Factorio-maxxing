@@ -171,6 +171,15 @@ other.
   every label.
 - The codebook is revised once, after E1, and every row carries its version.
 
+**The codebook is a workbook: `docs/codebook-v0.xlsx`** (research lead, 2026-10-19). It
+holds the definitions, inclusion and exclusion rules, and trajectory signals for each
+code; an Annotations sheet to fill in, with drop-downs restricted to the codebook; worked
+examples from the goal-5 rescue run, coded by Claude for the research lead to confirm;
+and a Summary sheet of counts, unstuck rates and an error x guidance cross-tab. It adds two
+annotation fields to the list above: secondary codes, and whether a hint mentioned API
+calls (the 5c protocol check). Whether E0 step 22 exports the Annotations sheet to the
+JSONL format above is decided at that step.
+
 ## 5c. Guidance protocol
 
 The operator is one person who learns across runs; these controls bound that bias.
