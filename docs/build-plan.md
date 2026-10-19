@@ -81,7 +81,7 @@ point only where genuinely necessary; do not build a phase before its turn.
 |---|---|---|---|
 | **M0** ✓ | Autonomous loop | Goal → policy → Python → FLE → observation → verification | — |
 | **M1** ✓ | Human rescue | + stuck detection → human guidance → policy continues | — |
-| **E0** | Eval scaffolding | Open-ended goal ("progress as far as you can") · objective milestone **Scorer** · **$X budget stop** · annotation schema · one run config per grid cell | A live run stops at $X and its milestones are scored from recorded state |
+| **E0** | Eval scaffolding | Open-ended goal ("progress as far as you can") · objective milestone **Scorer** · **300-step cap and $50 spend ceiling** (D65) · annotation schema · one run config per grid cell | A live run stops at its cap and its milestones are scored from recorded state |
 | **E1** | Standard-harness pilot | Runs 1, 2, 5, 6 at small n · first error catalogue · codebook v1 · guidance protocol in use | Every stuck event in the pilot is annotated |
 | **E2** | Specialized harness | Features chosen from the E1 catalogue, each switchable | Each feature has tests and a pilot run |
 | **E3** | Full grid | All 8 runs × n seeds | Every run recorded and annotated |
@@ -91,8 +91,8 @@ point only where genuinely necessary; do not build a phase before its turn.
 The catalogue from E1 decides what the specialized harness contains, so E2's design is
 driven by observed failures rather than guessed in advance.
 
-Budgets are explicit: dollar budget $X per run (the binding limit), plus a step ceiling
-as a safety net. The project does not promise a rocket launch ahead of results.
+Budgets are explicit: 300 steps per run (the binding limit), plus a $50 spend ceiling
+as a safety net (D65). The project does not promise a rocket launch ahead of results.
 
 ## 5. Metrics
 
@@ -144,19 +144,23 @@ and 5'-8' for GPT 6 Luna.
   harness at the `m1-complete` tag" (D60), after the comparison found the M1 harness
   gave the model markedly less context than FLE's.
   **Specialized harness** = our own, built in E2 on top of the standard harness.
-- **Equal dollars, not equal steps.** Every run gets the same budget $X, so the budget
-  model gets more steps. The comparison is cost-matched by design: it asks whether a
-  cheaper model plus a human matches a dearer model for the same API spend. Human
-  effort is not in dollars and is reported separately (§5).
+- **Equal steps, not equal dollars (D65).** Every run is capped at **300 steps** (one
+  policy program per step; verifier, history-summary and human turns use no steps but
+  their tokens are recorded), with a **$50 safety ceiling** against runaway spend. Cost is
+  an outcome, not the limit: it is reported per run and as **cost to each milestone**
+  (Scorer first-step x per-step cost). *Supersedes the original equal-dollar design*: with
+  a ~40x price gap, equal dollars let a budget model match milestones by sheer volume of
+  attempts, confounding the human's contribution with step count. Human effort is still
+  reported separately (§5).
 - **The verifier uses the policy's model in every run**, and its tokens count toward
-  $X. A frontier verifier in a budget run would be frontier help.
+  the $50 ceiling. A frontier verifier in a budget run would be frontier help.
 - **Same world seed and starting inventory** across all eight runs of a seed.
 - Further models are further rows; the grid does not change shape.
 - **Models (D64):** frontier **Claude Opus 5.5**; budget **Claude Haiku 5.5** and
   **GPT 6 Luna** - two budget rows, so the grid has 12 cells per seed.
-- **Budget (D64): $X = $15 per run.**
-- **TBD — research lead:** seeds per run (≥3 recommended); a step or wall-clock ceiling
-  for the budget models, which $15 buys ~40x more steps than Opus (D64).
+- **Seeds (D65):** Opus 5.5 runs **one seed** (4 runs, at most $200), for budget
+  reasons. **TBD — research lead:** seeds for the budget models (cheap, ~$1 per run;
+  ≥3 recommended).
 
 ## 5b. Error and guidance catalogue
 
@@ -247,7 +251,7 @@ Human: goal (fixed, or open-ended "progress as far as you can")
 (offline       │stuck                     │
  or passive) ask_human() → guidance ──────┘
 
- budget stop: estimated spend ≥ $X → end      (E0)
+ stop: 300 steps, or estimated spend ≥ $50 → end   (E0, D65)
  annotations/<run_id>.jsonl — written by hand after the run, never read by the loop
 ```
 
@@ -681,7 +685,7 @@ Branch or tag before major experimental changes. Tag milestones `m0-complete` an
 *Originally "do not build yet". Brought into scope by D60: the evaluation grid (§5a)
 is the experiment, so the runner is built in E0 (one config per cell, budget stop,
 Scorer) and exercised at scale in E3. The parameter list below gains `harness`
-(standard / specialized) and `budget_usd`.*
+(standard / specialized) and `max_spend_usd` (D65).*
 
 Architecture must eventually support `model · seed · goal · human backend · stuck
 detector · verification interval · history length` as configurable parameters, so that
@@ -741,9 +745,9 @@ Phases 0–5 are complete. The evaluation build order (D60), each step one Compa
 Development Cycle:
 
 **E0** — 18b. FLE pinned to 0.4.8 @ `e2a829d`, patched by `scripts/patch_fle.sh` (D61) ✓ · 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
-fixtures (D62) ✓ · 20. open-ended goal mode · 21. `budget_usd` stop from raw tokens and the
-pricing table · 22. annotation schema and a validator · 23. one config per grid cell ·
-24. a live run that stops at $X and is scored
+fixtures (D62) ✓ · 20. open-ended goal mode · 21. 300-step cap plus a `max_spend_usd` ceiling ($50, D65) computed from raw tokens
+and the pricing table · 22. annotation schema and a validator · 23. one config per grid cell ·
+24. a live run that stops at its cap and is scored
 
 **E1** — 25. guidance protocol written · 26. pilot of runs 1, 2, 5, 6 · 27. annotate
 every stuck event · 28. codebook v1
@@ -765,7 +769,8 @@ context — with the human never executing Factorio actions.
 
 Both are met (tags `m0-complete`, `m1-complete`; evidence in §3).
 
-**E0 complete** when a live run in any grid-cell config stops at its $X budget, its
+**E0 complete** when a live run in any grid-cell config stops at its step cap or spend
+ceiling (D65), its
 milestones are scored from recorded state by a tested Scorer, and an annotation file
 for it validates against the schema.
 

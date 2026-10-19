@@ -7,7 +7,7 @@ frontier-model performance in Factorio, and how much of that guidance can harnes
 engineering replace? (Changed 2026-10-16 — `docs/decisions.md` D60.)
 
 Evaluation: a 2×2×2 grid — frontier vs budget model × standard vs specialized harness ×
-with vs without human guidance — at an equal dollar budget per run, plus a catalogue
+with vs without human guidance — at an equal 300-step cap per run (D65), plus a catalogue
 of stuck-time errors and the guidance that resolved them. See `docs/build-plan.md` §5a–5d.
 
 ## Source of truth (highest first)
@@ -28,7 +28,7 @@ If a conversation instruction conflicts with these documents, stop and flag it.
 ## Current scope
 
 M0 and M1 are complete. **Current: E0 — eval scaffolding** (open-ended goal, milestone
-Scorer, dollar-budget stop, annotation schema, per-cell configs). See
+Scorer, step cap and spend ceiling, annotation schema, per-cell configs). See
 `docs/build-plan.md` §3–4.
 
 Do NOT implement before E2: specialized-harness features — memory, skill libraries,

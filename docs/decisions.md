@@ -2223,3 +2223,48 @@ third-party pricing pages (October 2026), to be confirmed against OpenAI's own.
 
 **Still open:** seeds per run; whether budget runs get a step or wall-clock ceiling; the
 effort level per model.
+
+---
+
+## D65 - Runs are capped at 300 steps with a $50 safety ceiling; Opus 5.5 runs one seed
+
+**Decision (research lead, 2026-10-20).** Every run stops at **300 policy steps**, or at
+**$50** estimated spend if that comes first. **Supersedes D64 item 3** ($15 per run) and
+the equal-dollar design of D60: the comparison is now step-matched, and cost is a
+reported outcome. **Claude Opus 5.5 runs one seed** - its four cells, at most $200.
+
+**Why.** At $15, D64 estimated ~110-170 steps for Opus 5.5 and ~5,000 for each budget
+model. With a ~40x step gap a budget model can reach a milestone by volume of attempts,
+so the human's contribution would be confounded with step count; the runs would also last
+11-19 hours each. Equal steps isolates capability - what remains between a budget model
+with guidance and Opus is what guidance closed - matches FLE's own convention (a step cap,
+5,000 on its leaderboard), and keeps a run to roughly 40-70 minutes.
+
+**What a step is.** One policy program submitted to FLE. Verifier calls, history-summary
+calls and human answers consume no steps; their tokens are recorded and priced like any
+other call, and count toward the $50 ceiling.
+
+**Cost is still reported:** per run, and per milestone (the Scorer's first step for each
+milestone times the run's cumulative per-step cost), e.g. "reached automation at x% of
+Opus's spend". A partial equal-dollar comparison remains possible after the fact, by
+cutting runs at a spend both models actually reached (under ~$1, the budget models' full
+runs; up to ~$35 for Opus) - not beyond.
+
+**Estimates (to be replaced by E1 calibration):** Opus 5.5 ~$27-42 per 300-step run, so
+the $50 ceiling should rarely bind (it would at more than ~$0.17 per step); Haiku 5.5 and
+GPT 6 Luna ~$1 per run.
+
+**Consequences of one Opus seed, flagged.**
+
+- The frontier row has no variance estimate. Gap closure ((run 6/7 - run 5) /
+  (run 1 - run 5)) uses a single run 1, so it carries that run's luck; report it per
+  frontier run, not as a mean, and read it beside the budget models' seed-to-seed spread.
+- If the standard harness is frozen before E1, the pilot's Opus runs 1 and 2 can be the
+  seed rather than spending again - the E1 pilot and the frontier row then coincide.
+- **Is 300 enough?** The pilot checks whether Opus's milestone curve has flattened by
+  step 300. If it is still climbing, 300 caps the frontier, not the budget models - a
+  reason to revisit.
+
+**E0 consequence.** The planned "$X budget stop" becomes a **step cap** (the existing
+`max_steps`, set to 300) plus a **$50 spend ceiling** computed from raw tokens and the
+pricing table at runtime (D55 - still no dollars stored in trajectories).
