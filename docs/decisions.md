@@ -2159,3 +2159,67 @@ record is written after the reply.
 
 **Status.** Offline tests only; **live verification pending** (a client must join to see
 the camera, cues and HUD).
+
+---
+
+## D64 - Standard harness replicates FLE's agent; $15 per run; Opus 5.5 vs Haiku 5.5 and GPT 6 Luna
+
+**Decision (research lead, 2026-10-20).**
+
+1. **The standard harness replicates FLE's published agent** (`fle/agents/gym_agent.py`,
+   read-only): `GYM_AGENT_INSTRUCTIONS`, FLE's observation formatting, and
+   `RecursiveReportFormatter`'s history scheme, on FLE's action layer. The M1 human
+   interface - verifier, stuck detector, human backends - stays, because the human
+   cells need it. **Supersedes D60 item 1** ("the M1 harness at the `m1-complete` tag").
+2. **The specialized harness is our own**, built in E2.
+3. **$X = $15 per run.**
+4. **Models:** frontier `claude-opus-5-5`; budget `claude-haiku-5-5` and GPT 6 Luna.
+
+**Why the standard harness changed.** Compared line by line (FLE 0.4.8), the M1 harness
+gave the model less than FLE's own agent: history beyond 16 steps dropped where FLE keeps 8
+steps verbatim plus an LLM report of all earlier ones (its `chunk_size=16` counts
+messages, not steps - D1's "matches FLE" got the unit and the summary wrong); 5 lines of
+instructions against FLE's ~70; at most 32 entities with four fields, against every entity
+in full detail (fuel, contents, warnings, recipe, drop position); no character position,
+game info, score or saved functions; no trimming of stale entity data. A crippled standard
+harness would understate runs 1/2/5/6 and inflate both the human's and the specialized
+harness's apparent value.
+
+**Known deviations, recorded rather than hidden.**
+
+- *Temperature.* FLE samples at 0.5. Opus 5.5 and Haiku 5.5 reject a non-default
+  temperature (400), so every model runs at its provider default.
+- *Thinking.* Opus 5.5 and Haiku 5.5 always think (adaptive; effort defaults to
+  `medium`), which FLE's 2025 baseline models did not. Thinking tokens bill as output and
+  count toward $X. Effort is held at each model's default unless the research lead sets it.
+- *The verifier and human interface* are additions FLE's agent does not have.
+
+**What $15 buys - estimates, to be replaced by E1 calibration.** From our measured
+per-step token profile (policy ~48k input, ~36.6k of it cached, plus output; verifier
+~2.8k input), with 1-3k thinking-plus-answer output tokens assumed:
+
+| Model | List price ($/M in, out) | Est. cost per step | Steps for $15 |
+|---|---|---|---|
+| Claude Opus 5.5 | 4 / 20 (cache read 0.20) | ~$0.09-0.14 | ~110-170 |
+| Claude Haiku 5.5 | 0.10 / 0.50 (prompts <=100K) | ~$0.003 | ~5,000 |
+| GPT 6 Luna | 0.10 / 0.50 (third-party listing, unconfirmed) | ~$0.003 | ~5,000 |
+
+Prices: Claude rates from the Claude API reference (cached 2026-10-06); GPT 6 Luna from
+third-party pricing pages (October 2026), to be confirmed against OpenAI's own.
+
+**Consequences, flagged for the research lead.**
+
+- *A ~40x step gap.* Equal dollars give each budget model ~40x Opus's steps. That is what
+  a cost-matched question asks, but it means Opus at $15 may stop near automation while
+  the budget models run for thousands of steps.
+- *Wall-clock.* At 8-14 s per step a 5,000-step run takes ~11-19 hours; the grid holds 24
+  budget-model runs per three seeds. No-human runs can run in parallel on more cluster
+  instances; human runs pause at each request (the game is paused between steps in
+  measured runs), so the operator answers pages rather than watching - but a 15-hour run
+  is still a 15-hour on-call window.
+- *Haiku 5.5's 100K price step.* Prompts above 100K tokens cost 5x. FLE-style full entity
+  observations on a large factory could cross it; the replica's observation size has to be
+  measured.
+
+**Still open:** seeds per run; whether budget runs get a step or wall-clock ceiling; the
+effort level per model.

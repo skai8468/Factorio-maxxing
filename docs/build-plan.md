@@ -134,8 +134,16 @@ error taxonomy (assertion / code / environment).
 | **Frontier model** | 1 | 2 | 3 | 4 |
 | **Budget model** | 5 | 6 | 7 | 8 |
 
-- **Standard harness** = the M1 harness as it stands at the `m1-complete` tag.
-  **Specialized harness** = the standard harness plus the E2 features.
+With two budget models (D64) the budget row is repeated for each: runs 5-8 for Haiku 5.5
+and 5'-8' for GPT 6 Luna.
+
+- **Standard harness** = a replication of FLE's published agent (`GymAgent`): its
+  instructions, its observation formatting and its history scheme (8 recent steps plus
+  a rolling LLM report), on FLE's action layer - plus the M1 human interface (verifier,
+  stuck detector, human backends), which the human cells need (D64). Supersedes "the M1
+  harness at the `m1-complete` tag" (D60), after the comparison found the M1 harness
+  gave the model markedly less context than FLE's.
+  **Specialized harness** = our own, built in E2 on top of the standard harness.
 - **Equal dollars, not equal steps.** Every run gets the same budget $X, so the budget
   model gets more steps. The comparison is cost-matched by design: it asks whether a
   cheaper model plus a human matches a dearer model for the same API spend. Human
@@ -144,8 +152,11 @@ error taxonomy (assertion / code / environment).
   $X. A frontier verifier in a budget run would be frontier help.
 - **Same world seed and starting inventory** across all eight runs of a seed.
 - Further models are further rows; the grid does not change shape.
-- **TBD — research lead:** frontier model · budget model · extra rows · $X · seeds per
-  run (≥3 recommended; Factorio runs vary widely).
+- **Models (D64):** frontier **Claude Opus 5.5**; budget **Claude Haiku 5.5** and
+  **GPT 6 Luna** - two budget rows, so the grid has 12 cells per seed.
+- **Budget (D64): $X = $15 per run.**
+- **TBD — research lead:** seeds per run (≥3 recommended); a step or wall-clock ceiling
+  for the budget models, which $15 buys ~40x more steps than Opus (D64).
 
 ## 5b. Error and guidance catalogue
 
