@@ -5,7 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from factorio_maxxing.goal import Goal, GoalResult
+from factorio_maxxing.goal import (
+    OPEN_ENDED_DESCRIPTION,
+    Goal,
+    GoalResult,
+    open_ended_goal,
+)
 
 
 def test_goal_construction():
@@ -81,3 +86,27 @@ def test_goal_result_records_failure_without_deciding_anything():
     )
     assert result.completed is False
     assert result.steps_used == 32
+
+
+def test_a_goal_is_not_open_ended_by_default():
+    assert Goal(description="Produce iron plates").open_ended is False
+
+
+def test_the_open_ended_goal_carries_the_evaluation_text_and_the_cap():
+    goal = open_ended_goal(300)
+    assert goal.open_ended is True
+    assert goal.description == OPEN_ENDED_DESCRIPTION
+    assert goal.max_steps == 300
+    assert goal.notes is None
+
+
+def test_the_open_ended_goal_names_no_milestone():
+    """D67: listing the ladder's rungs would hand the policy a roadmap."""
+    text = OPEN_ENDED_DESCRIPTION.lower()
+    for rung in ("automation", "steam", "lab", "science", "drill", "logistics"):
+        assert rung not in text
+
+
+def test_the_open_ended_goal_still_validates_its_cap():
+    with pytest.raises(ValueError, match="max_steps"):
+        open_ended_goal(0)

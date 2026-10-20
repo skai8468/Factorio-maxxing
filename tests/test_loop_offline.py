@@ -6,12 +6,18 @@ against the trajectory rather than against internal state. Everything here is of
 no API key, no Docker, no Factorio.
 """
 
+import pytest
+
 from factorio_maxxing.envs import MockFactorioEnv, MockFrame
-from factorio_maxxing.goal import Goal
+from factorio_maxxing.goal import Goal, open_ended_goal
 from factorio_maxxing.human import NoHuman, ScriptedHuman
 from factorio_maxxing.llm import StubLLMClient
 from factorio_maxxing.loop import run_goal
-from factorio_maxxing.stuck import ConsecutiveNonDoneDetector, default_detector
+from factorio_maxxing.stuck import (
+    ConsecutiveNonDoneDetector,
+    default_detector,
+    open_ended_detector,
+)
 from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
 from factorio_maxxing.verifier import LLMVerifier, StubVerifier, VerificationResult
 
@@ -181,4 +187,76 @@ def test_the_autonomous_baseline_records_where_help_would_have_been_asked(tmp_pa
     requests = [r for r in records if r["type"] == "intervention"]
     assert result.interventions == 0
     assert [r["step"] for r in requests] == [1, 3]
+    assert all(r["text"] is None for r in requests)
+
+
+def run_open_ended(path, *, max_steps=6, verifier=None, human=None, detector=None, **kw):
+    with TrajectoryRecorder(path, run_id="run-1") as recorder:
+        result = run_goal(
+            open_ended_goal(max_steps),
+            mining_env(),
+            StubLLMClient(POLICIES),
+            verifier,
+            human or NoHuman(),
+            detector or open_ended_detector(3, backstop_steps=20),
+            recorder,
+            **kw,
+        )
+    return result, read_trajectory(path)
+
+
+def test_an_open_ended_run_ends_only_at_its_step_cap(tmp_path):
+    result, records = run_open_ended(tmp_path / "run.jsonl", max_steps=6)
+    assert result.completed is False
+    assert result.steps_used == 6
+    assert result.reason == "max_steps reached"
+    assert [r["step"] for r in records if r["type"] == "step"] == list(range(6))
+
+
+def test_an_open_ended_run_never_consults_the_verifier(tmp_path):
+    """D67: a verifier that would say DONE cannot end an open-ended run early."""
+    verifier = StubVerifier([DONE])
+    result, records = run_open_ended(tmp_path / "run.jsonl", verifier=verifier)
+    assert verifier.call_count == 0
+    assert result.steps_used == 6
+    assert not [r for r in records if r["type"] == "verification"]
+    assert not [r for r in records if r.get("role") == "verifier"]
+
+
+def test_a_goal_that_can_complete_still_needs_a_verifier(tmp_path):
+    with pytest.raises(ValueError, match="needs a verifier"):
+        with TrajectoryRecorder(tmp_path / "run.jsonl", run_id="run-1") as recorder:
+            run_goal(
+                GOAL,
+                mining_env(),
+                StubLLMClient(POLICIES),
+                None,
+                NoHuman(),
+                default_detector(3),
+                recorder,
+            )
+
+
+def test_interventions_never_abort_an_open_ended_run(tmp_path):
+    """D67: a guided run lasts as long as its unguided twin."""
+    result, records = run_open_ended(
+        tmp_path / "run.jsonl",
+        human=ScriptedHuman([f"hint {i}" for i in range(10)]),
+        detector=open_ended_detector(3, backstop_steps=1),
+        max_interventions=1,
+    )
+    assert result.steps_used == 6
+    assert result.reason == "max_steps reached"
+    assert result.interventions == 6
+
+
+def test_the_backstop_asks_after_each_quiet_stretch(tmp_path):
+    _, records = run_open_ended(
+        tmp_path / "run.jsonl", detector=open_ended_detector(3, backstop_steps=2)
+    )
+    requests = [r for r in records if r["type"] == "intervention"]
+    assert [r["step"] for r in requests] == [1, 3, 5]
+    assert all(
+        r["stuck_reason"] == "2 steps without a request for help" for r in requests
+    )
     assert all(r["text"] is None for r in requests)

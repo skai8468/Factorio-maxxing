@@ -28,6 +28,10 @@ Human: goal (fixed, or open-ended "progress as far as you can")
  annotations/<run_id>.jsonl — hand-written after the run, never read by the loop
 ```
 
+On the open-ended goal (D67) the Verifier box is skipped - nothing can be DONE - so the
+run ends only at its step cap, and the StuckDetector pairs repeated errors with a step
+backstop (help is requested after 20 steps without a request).
+
 The Goal Manager (M3+) was removed with M3 (`decisions.md` D60).
 
 ## Component responsibilities

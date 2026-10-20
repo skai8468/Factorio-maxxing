@@ -12,6 +12,10 @@ Two counters, per D12:
   gets a fresh window instead of the detector re-firing on the next step;
 - ``interventions`` does not reset, and aborts the goal at ``max_interventions``. With
   no progress signal defined at M0/M1 this is a hard cap on interventions per goal.
+
+An open-ended goal (D67) has no finish line: the verifier is never consulted and the
+intervention cap never aborts, so the run ends at ``max_steps`` - or earlier only if the
+environment ends it - and a guided run lasts as long as its unguided twin.
 """
 
 import logging
@@ -110,7 +114,7 @@ def run_goal(
     goal: Goal,
     env: EnvProtocol,
     policy_client: LLMClient,
-    verifier: Verifier,
+    verifier: Verifier | None,
     human: HumanProtocol,
     detector: StuckDetector,
     recorder: TrajectoryRecorder,
@@ -124,13 +128,18 @@ def run_goal(
 ) -> GoalResult:
     """Run one goal to completion, failure, or abort.
 
-    Returns as soon as the verifier says DONE, with no further policy call.
+    Returns as soon as the verifier says DONE, with no further policy call. An
+    open-ended goal never consults the verifier, which may then be None (D67).
 
     History entries carry each step's observation rendered without entities - only the
     current observation lists them (D66). With a ``reporter``, a history report is
     rewritten after every ``reporter.interval`` steps and shown to the policy; its
     call is recorded as a ``summarizer`` llm_call and its text as a ``report`` record.
     """
+    if verifier is None and not goal.open_ended:
+        raise ValueError("a goal that can be completed needs a verifier")
+    checker = None if goal.open_ended else verifier
+
     observation = env.reset()
     rendered = render_observation(observation)
 
@@ -185,9 +194,9 @@ def run_goal(
         errors.append("\n".join(step_errors))
         flows.append(observation.get("flows"))
 
-        if step % verification_interval == 0:
-            verdict = verifier.check(goal, rendered, window[-verification_window:])
-            _record_verifier_usage(recorder, step, verifier)
+        if checker is not None and step % verification_interval == 0:
+            verdict = checker.check(goal, rendered, window[-verification_window:])
+            _record_verifier_usage(recorder, step, checker)
             verifications.append(verdict)
             recorder.record_verification(step, verdict)
             if verdict.done:
@@ -240,7 +249,7 @@ def run_goal(
         guidance.append(text)
         interventions += 1
 
-        if interventions >= max_interventions:
+        if not goal.open_ended and interventions >= max_interventions:
             return result(
                 False,
                 step + 1,

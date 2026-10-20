@@ -22,6 +22,7 @@ from typing import Any, Protocol, runtime_checkable
 from factorio_maxxing.verifier import VerificationResult
 
 STUCK_THRESHOLD = 3
+BACKSTOP_STEPS = 20
 
 History = Sequence[tuple[str, str]]
 Verifications = Sequence[VerificationResult]
@@ -128,6 +129,37 @@ class RepeatedErrorDetector:
         return NOT_STUCK
 
 
+class StepBackstopDetector:
+    """Fires once `interval` steps have passed without a request for help.
+
+    The open-ended goal's stand-in for consecutive non-DONE (D67). A goal with no
+    finish line is never DONE, so on it a non-DONE streak is only a step count paid for
+    in verifier calls; this counts the steps directly, which is what the M1 detector
+    would have done there. It is a backstop, not stuck detection: smarter signals are
+    specialized-harness features (E2).
+
+    `history` carries one entry per step since help was last requested, because the
+    loop opens a fresh window at every request (D12), answered or not.
+    """
+
+    def __init__(self, interval: int = BACKSTOP_STEPS):
+        if interval < 1:
+            raise ValueError(f"interval must be >= 1, got {interval}")
+        self.interval = interval
+
+    def is_stuck(
+        self,
+        history: History,
+        verifications: Verifications,
+        flows: Flows,
+        errors: Errors,
+    ) -> tuple[bool, str]:
+        steps = len(history)
+        if steps >= self.interval:
+            return True, f"{steps} steps without a request for help"
+        return NOT_STUCK
+
+
 class CompositeStuckDetector:
     """Runs several detectors and reports the first that fires.
 
@@ -172,4 +204,17 @@ def default_detector(
             RepeatedErrorDetector(threshold),
             ConsecutiveNonDoneDetector(non_done_threshold),
         ]
+    )
+
+
+def open_ended_detector(
+    threshold: int = STUCK_THRESHOLD, backstop_steps: int = BACKSTOP_STEPS
+) -> CompositeStuckDetector:
+    """The standard detector on an open-ended goal (D67).
+
+    Repeated errors keep their short threshold; the step backstop takes the place of
+    consecutive non-DONE, which has no meaning without a verifier.
+    """
+    return CompositeStuckDetector(
+        [RepeatedErrorDetector(threshold), StepBackstopDetector(backstop_steps)]
     )

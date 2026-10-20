@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from factorio_maxxing.goal import OPEN_ENDED_DESCRIPTION
 from factorio_maxxing.human import InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.pricing import price_key
 from factorio_maxxing.run import (
@@ -18,6 +19,7 @@ from factorio_maxxing.run import (
     ConfigError,
     build_detector,
     build_environment,
+    build_goal,
     build_human,
     build_parser,
     build_verifier,
@@ -27,6 +29,7 @@ from factorio_maxxing.run import (
     main,
     resolve_config,
 )
+from factorio_maxxing.stuck import RepeatedErrorDetector, StepBackstopDetector
 from factorio_maxxing.trajectory import read_trajectory
 from factorio_maxxing.verifier import LLMVerifier
 
@@ -717,3 +720,107 @@ def test_a_mock_run_writes_history_reports(tmp_path):
     steps = [r["step"] for r in records if r["type"] == "step"]
     # The verifier ends the run on the last step, before a report no prompt would read.
     assert [r["step"] for r in records if r["type"] == "report"] == steps[:-1]
+
+
+OPEN_ENDED_ARGS = [
+    "--open-ended",
+    "--mock",
+    "--policy-model",
+    "stub",
+    "--human",
+    "none",
+    "--max-steps",
+    "5",
+]
+
+
+def test_open_ended_is_off_by_default():
+    config = Config()
+    assert config.open_ended is False
+    assert config.backstop_steps == 20
+
+
+def test_the_open_ended_flag_builds_the_evaluation_goal():
+    config = resolve_config(parse("--open-ended", "--mock", "--max-steps", "300"))
+    goal = build_goal(config, None, None)
+    assert goal.open_ended is True
+    assert goal.description == OPEN_ENDED_DESCRIPTION
+    assert goal.max_steps == 300
+
+
+def test_open_ended_can_come_from_the_config_file(tmp_path):
+    path = write_config(tmp_path, open_ended=True, backstop_steps=15)
+    config = resolve_config(parse("--config", str(path)))
+    assert config.open_ended is True
+    assert config.backstop_steps == 15
+    assert build_goal(config, None, None).open_ended is True
+
+
+def test_an_absent_open_ended_flag_does_not_override_a_config_file(tmp_path):
+    path = write_config(tmp_path, open_ended=True)
+    assert resolve_config(parse("--config", str(path))).open_ended is True
+
+
+def test_backstop_steps_flag_overrides_config(tmp_path):
+    path = write_config(tmp_path, open_ended=True, backstop_steps=15)
+    args = parse("--config", str(path), "--backstop-steps", "30")
+    assert resolve_config(args).backstop_steps == 30
+
+
+def test_a_goal_and_an_open_ended_run_are_exclusive():
+    with pytest.raises(ConfigError, match="cannot be combined"):
+        build_goal(Config(open_ended=True), "Research automation", None)
+
+
+def test_a_goal_is_required_unless_the_run_is_open_ended():
+    with pytest.raises(ConfigError, match="--goal is required"):
+        build_goal(Config(), None, None)
+
+
+def test_an_open_ended_run_builds_no_verifier():
+    """D67: there is nothing to verify, so no verifier model is called or paid for."""
+    assert (
+        build_verifier(Config(open_ended=True, verifier_model="claude-haiku-4-5")) is None
+    )
+
+
+def test_an_open_ended_run_uses_the_backstop_in_place_of_non_done():
+    detector = build_detector(
+        Config(
+            open_ended=True, stuck_threshold=3, backstop_steps=25, non_done_threshold=10
+        )
+    )
+    error_half, backstop = detector.detectors
+    assert isinstance(error_half, RepeatedErrorDetector)
+    assert error_half.threshold == 3
+    assert isinstance(backstop, StepBackstopDetector)
+    assert backstop.interval == 25
+
+
+def test_an_open_ended_backstop_below_one_is_refused(tmp_path, capsys):
+    exit_code = main(
+        [*OPEN_ENDED_ARGS, "--backstop-steps", "0", "--trajectory-dir", str(tmp_path)]
+    )
+    assert exit_code == 2
+    assert "interval" in capsys.readouterr().err
+
+
+def test_a_run_with_neither_goal_nor_open_ended_exits_cleanly(tmp_path, capsys):
+    exit_code = main(["--mock", "--human", "none", "--trajectory-dir", str(tmp_path)])
+    assert exit_code == 2
+    assert "--goal is required" in capsys.readouterr().err
+
+
+def test_open_ended_smoke_run(tmp_path, capsys):
+    exit_code = main([*OPEN_ENDED_ARGS, "--trajectory-dir", str(tmp_path)])
+    output = capsys.readouterr().out
+
+    assert exit_code == 0
+    assert "completed:     n/a (open-ended)" in output
+    assert "steps used:    5 of 5" in output
+    assert "reason:        max_steps reached" in output
+
+    records = read_trajectory(next(tmp_path.glob("*.jsonl")))
+    assert [r["step"] for r in records if r["type"] == "step"] == list(range(5))
+    assert not [r for r in records if r["type"] == "verification"]
+    assert records[0]["goal"] == OPEN_ENDED_DESCRIPTION

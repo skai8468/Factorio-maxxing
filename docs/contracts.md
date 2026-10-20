@@ -11,6 +11,11 @@ class Goal:
     description: str          # free text, e.g. "Build a working iron mining setup."
     max_steps: int = 32
     notes: str | None = None  # optional human hints supplied up front
+    open_ended: bool = False  # no finish line: never verified, ends at max_steps (D67)
+
+OPEN_ENDED_DESCRIPTION = ("Progress as far as you can up the technology tree, "
+                          "automating production as you go.")
+def open_ended_goal(max_steps: int, notes: str | None = None) -> Goal: ...
 
 @dataclass
 class GoalResult:
@@ -25,7 +30,12 @@ class GoalResult:
 Deliberately minimal: no subtasks, no decomposition, no planning graph.
 
 `Goal` validates on construction and raises `ValueError` for an empty or
-whitespace-only `description`, or for `max_steps < 1`. `GoalResult` does not
+whitespace-only `description`, or for `max_steps < 1`.
+
+An open-ended goal is never passed to the verifier, and the intervention cap never
+aborts it: `run_goal` accepts `verifier=None` for it (and raises `ValueError` for
+`None` on any other goal), and returns `completed=False`, `reason="max_steps reached"`
+at the cap unless the environment ends the run first. `GoalResult` does not
 validate: it is a passive record of what happened, including failures.
 
 ## `envs.py`
@@ -104,6 +114,12 @@ class StuckDetector(Protocol):
 ```
 
 Returns `(stuck, reason)`. Decides when to request help; never decides goal completion.
+
+Two compositions: `default_detector(threshold, non_done_threshold)` - repeated errors
+plus consecutive non-DONE verdicts - and, on an open-ended goal,
+`open_ended_detector(threshold, backstop_steps)` - repeated errors plus
+`StepBackstopDetector`, which fires after `backstop_steps` steps without a request for
+help (reason `"N steps without a request for help"`) (D67).
 
 ## `human.py`
 
@@ -263,6 +279,8 @@ first step of each rung.
   "max_interventions_without_progress": 3,
   "verification_interval": 1,
   "max_steps": 32,
+  "open_ended": false,
+  "backstop_steps": 20,
   "history_length": 8,
   "history_report_interval": 8,
   "environment": "mock",
@@ -283,6 +301,11 @@ every prompt the policy's model receives into, one file per call; empty writes n
 `non_done_threshold` splits the default detector's single threshold: `stuck_threshold`
 governs repeated errors, `non_done_threshold` consecutive non-DONE verdicts. `null` uses
 `stuck_threshold` for both, as before. Long goals set it higher (`decisions.md` D50).
+
+`open_ended` runs the open-ended evaluation goal (CLI `--open-ended`, exclusive with
+`--goal`): no verifier is built, and `verifier_model`, `verification_interval`,
+`non_done_threshold` and `max_interventions_without_progress` have no effect.
+`backstop_steps` is its stuck backstop (D67).
 
 API keys come from environment variables, never this file. For an identity-linked API
 key, `ANTHROPIC_WORKSPACE_ID` must be set alongside the key (`decisions.md` D27).

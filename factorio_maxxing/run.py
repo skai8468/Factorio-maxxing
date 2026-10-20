@@ -31,13 +31,13 @@ from factorio_maxxing.envs import (
     MockFrame,
     RealFactorioEnv,
 )
-from factorio_maxxing.goal import Goal
+from factorio_maxxing.goal import Goal, open_ended_goal
 from factorio_maxxing.history_report import HistoryReporter
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
 from factorio_maxxing.loop import run_goal
 from factorio_maxxing.pricing import format_summary, summarize
-from factorio_maxxing.stuck import default_detector
+from factorio_maxxing.stuck import default_detector, open_ended_detector
 from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
 from factorio_maxxing.verifier import LLMVerifier, StubVerifier, VerificationResult
 
@@ -114,6 +114,14 @@ class Config:
     max_interventions_without_progress: int = 3
     verification_interval: int = 1
     max_steps: int = 32
+    open_ended: bool = False
+    """Run the open-ended evaluation goal instead of a ``--goal`` (D67). No verifier is
+    built, the run ends only at ``max_steps`` (or if the environment ends it), and
+    `max_interventions_without_progress`, `verification_interval`, `verifier_model` and
+    `non_done_threshold` have no effect."""
+    backstop_steps: int = 20
+    """Open-ended runs only: steps without a request for help before the harness asks
+    anyway - the stand-in for the non-DONE backstop, which needs a verifier (D67)."""
     history_length: int = 8
     """Steps shown verbatim; older steps reach the policy through the history report
     (D66). FLE's agent keeps 8."""
@@ -218,7 +226,14 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m factorio_maxxing.run",
         description="Run one goal through the human-assisted Factorio harness.",
     )
-    parser.add_argument("--goal", required=True, help="the goal description")
+    parser.add_argument(
+        "--goal", help="the goal description; required unless the run is open-ended"
+    )
+    parser.add_argument(
+        "--open-ended",
+        action="store_true",
+        help="run the open-ended evaluation goal, ending only at the step cap (D67)",
+    )
     parser.add_argument("--config", help="path to a JSON config file")
     parser.add_argument("--notes", help="optional hints supplied with the goal")
 
@@ -241,6 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--non-done-threshold",
         type=int,
         help="non-DONE verdicts in a row before help is requested (D50)",
+    )
+    parser.add_argument(
+        "--backstop-steps",
+        type=int,
+        help="open-ended runs: steps without a request for help before asking (D67)",
     )
     parser.add_argument("--history-length", type=int)
     parser.add_argument(
@@ -303,6 +323,8 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "verification_interval": args.verification_interval,
         "stuck_threshold": args.stuck_threshold,
         "non_done_threshold": args.non_done_threshold,
+        "open_ended": True if args.open_ended else None,
+        "backstop_steps": args.backstop_steps,
         "history_length": args.history_length,
         "history_report_interval": args.history_report_interval,
         "dump_prompts": args.dump_prompts,
@@ -317,6 +339,17 @@ def resolve_config(args: argparse.Namespace) -> Config:
     }
     values.update({k: v for k, v in overrides.items() if v is not None})
     return Config(**values)
+
+
+def build_goal(config: Config, description: str | None, notes: str | None) -> Goal:
+    """The run's goal: the open-ended evaluation goal, or the ``--goal`` given (D67)."""
+    if config.open_ended:
+        if description:
+            raise ConfigError("--goal cannot be combined with an open-ended run")
+        return open_ended_goal(config.max_steps, notes=notes)
+    if description is None:
+        raise ConfigError("--goal is required unless the run is open-ended")
+    return Goal(description=description, max_steps=config.max_steps, notes=notes)
 
 
 def build_environment(config: Config) -> EnvProtocol:
@@ -397,7 +430,12 @@ class PromptDumpingClient:
 
 
 def build_verifier(config: Config):
-    """Build the verifier on its own model, configured independently (D5)."""
+    """Build the verifier on its own model, configured independently (D5).
+
+    An open-ended run has nothing to verify, so it builds none (D67).
+    """
+    if config.open_ended:
+        return None
     if config.verifier_model == STUB_MODEL:
         return StubVerifier(DEMO_VERDICTS)
     return LLMVerifier(_api_client(config.verifier_model))
@@ -432,6 +470,8 @@ def build_detector(config: Config):
             f"unknown stuck detector: {config.stuck_detector}; "
             f"the only detector is {DEFAULT_DETECTOR}"
         )
+    if config.open_ended:
+        return open_ended_detector(config.stuck_threshold, config.backstop_steps)
     return default_detector(config.stuck_threshold, config.non_done_threshold)
 
 
@@ -441,7 +481,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = resolve_config(args)
-        goal = Goal(description=args.goal, max_steps=config.max_steps, notes=args.notes)
+        goal = build_goal(config, args.goal, args.notes)
         env = build_environment(config)
         policy_client = build_policy_client(config)
         reporter = build_reporter(config, policy_client)
@@ -517,7 +557,8 @@ def _api_client(model: str) -> APIClient:
 def _print_summary(result) -> None:
     print("")
     print(f"goal:          {result.goal.description}")
-    print(f"completed:     {result.completed}")
+    completed = "n/a (open-ended)" if result.goal.open_ended else result.completed
+    print(f"completed:     {completed}")
     print(f"steps used:    {result.steps_used} of {result.goal.max_steps}")
     print(f"interventions: {result.interventions}")
     print(f"reason:        {result.reason}")

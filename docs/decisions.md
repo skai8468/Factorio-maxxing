@@ -2329,3 +2329,46 @@ position, game time); +2.1k of standing instructions, cached.
 
 **Not frozen yet.** The `standard-harness-v1` tag waits for the research lead (D65: the
 pilot's Opus runs only count as grid data if the standard harness is frozen first).
+
+---
+
+## D67 - The open-ended goal: no verifier, no abort, a step backstop for help
+
+**Decision (research lead, 2026-10-20)**, E0 step 20. Every option below was the
+recommended one.
+
+1. **Goal text:** *"Progress as far as you can up the technology tree, automating
+   production as you go."* (`goal.OPEN_ENDED_DESCRIPTION`). It points along the §5d
+   ladder without naming a rung - a list of milestones would be a roadmap, and a roadmap
+   is guidance. Rejected: FLE's `open_play` text ("Achieve the highest automatic
+   production score rate"), which rewards our secondary metric, and its
+   `open_play_production` text ("Build the biggest automated factory possible."), which
+   says nothing of research while most of the ladder is research.
+2. **No verifier.** No state completes the goal, so the verifier is never called and
+   none is built: no tokens spent on a verdict that can only be NOT DONE, and no chance
+   of a model ending a run early by calling it DONE. Progress is the Scorer's, after the
+   run (D62). The run ends at `max_steps` (300, D65) or if the environment ends it.
+3. **Stuck signal: repeated errors plus a step backstop.** Consecutive non-DONE means
+   nothing without verdicts. On a goal that is never DONE, the M1 detector's non-DONE
+   half reduces to "ask every N steps", so `StepBackstopDetector` asks after
+   `backstop_steps` (default 20) steps without a request - the same behaviour without
+   paying for verifier calls - beside the unchanged repeated-error half (threshold 3).
+   The window still resets at every request, answered or not (D12). At most ~15
+   backstop requests in 300 steps. Rejected: repeated errors alone (blind to a clean but
+   idle agent) and a no-state-change detector (a Factorio-aware detector, which is E2
+   material).
+4. **No intervention abort.** `max_interventions_without_progress` does not end an
+   open-ended run, so a guided run lasts the same 300 steps as its unguided twin and
+   step count is not confounded with the human's presence.
+
+**Shape.** `Goal.open_ended` (default False) is the single switch: the loop skips the
+verifier and the abort for it, and accepts `verifier=None` only for it. `run.py` gains
+`open_ended` / `--open-ended` (exclusive with `--goal`) and `backstop_steps` /
+`--backstop-steps`; an open-ended run builds no verifier and uses
+`open_ended_detector`. Fixed goals behave exactly as before.
+
+**Consequences.** Verifier-vs-objective-state comparisons (§5) exist only for fixed
+goals; in the grid, the Scorer is the only measure of progress. The backstop's 20 is a
+default, not a calibrated value - E1's pilot shows whether it asks too often or too
+rarely. Runs 3/4 and 7/8 may replace the backstop with a specialized detector from E2.
+

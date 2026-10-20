@@ -10,9 +10,11 @@ from factorio_maxxing.stuck import (
     CompositeStuckDetector,
     ConsecutiveNonDoneDetector,
     RepeatedErrorDetector,
+    StepBackstopDetector,
     StuckDetector,
     default_detector,
     error_signature,
+    open_ended_detector,
 )
 from factorio_maxxing.verifier import VerificationResult
 
@@ -209,3 +211,57 @@ def test_detectors_do_not_mutate_their_inputs():
     default_detector(3).is_stuck(HISTORY, verifications, [], errors)
     assert verifications == [NOT_DONE] * 3
     assert errors == ["NameError: x"] * 3
+
+
+def steps(n):
+    return [(f"x = {i}", "obs") for i in range(n)]
+
+
+def test_the_backstop_satisfies_the_protocol():
+    assert isinstance(StepBackstopDetector(5), StuckDetector)
+
+
+def test_the_backstop_fires_once_the_interval_has_passed():
+    stuck, reason = check(StepBackstopDetector(20), history=steps(20))
+    assert stuck is True
+    assert reason == "20 steps without a request for help"
+
+
+def test_the_backstop_stays_quiet_below_the_interval():
+    assert check(StepBackstopDetector(20), history=steps(19)) == (False, "")
+
+
+def test_the_backstop_needs_no_verifications():
+    """D67: an open-ended run has no verifier, so the backstop reads steps alone."""
+    assert check(StepBackstopDetector(2), verifications=(), history=steps(2))[0] is True
+
+
+def test_the_backstop_rejects_an_interval_below_one():
+    with pytest.raises(ValueError, match="interval"):
+        StepBackstopDetector(0)
+
+
+def test_the_open_ended_detector_pairs_repeated_errors_with_the_backstop():
+    detector = open_ended_detector(3, backstop_steps=20)
+    error_half, backstop = detector.detectors
+    assert isinstance(error_half, RepeatedErrorDetector)
+    assert error_half.threshold == 3
+    assert isinstance(backstop, StepBackstopDetector)
+    assert backstop.interval == 20
+
+
+def test_the_open_ended_detector_catches_repeated_errors_before_the_backstop():
+    stuck, reason = check(
+        open_ended_detector(3, 20), errors=["NameError: x"] * 3, history=steps(3)
+    )
+    assert stuck is True
+    assert "repeated execution errors" in reason
+
+
+def test_the_open_ended_detector_ignores_non_done_verdicts():
+    """Every verdict on a goal with no finish line would be non-DONE."""
+    detector = open_ended_detector(3, 20)
+    assert check(detector, [NOT_DONE] * 10, errors=[""] * 10, history=steps(10)) == (
+        False,
+        "",
+    )

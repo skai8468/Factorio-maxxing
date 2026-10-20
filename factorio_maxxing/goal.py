@@ -9,6 +9,12 @@ from pathlib import Path
 
 DEFAULT_MAX_STEPS = 32
 
+OPEN_ENDED_DESCRIPTION = (
+    "Progress as far as you can up the technology tree, automating production as you go."
+)
+"""The evaluation goal (D67). It names the direction of the milestone ladder without
+listing its rungs: a list of milestones would be a roadmap, and a roadmap is guidance."""
+
 
 @dataclass(frozen=True)
 class Goal:
@@ -22,12 +28,21 @@ class Goal:
     notes: str | None = None
     """Optional human hints supplied up front. Distinct from mid-run guidance,
     which reaches the policy through the human backend, not through the Goal."""
+    open_ended: bool = False
+    """No state completes the goal: the run ends at its step cap, or earlier only if the
+    environment ends it. The verifier is not consulted, and interventions never abort
+    the run (D67). Progress is measured afterwards by the Scorer."""
 
     def __post_init__(self) -> None:
         if not self.description.strip():
             raise ValueError("Goal.description must be a non-empty string")
         if self.max_steps < 1:
             raise ValueError(f"Goal.max_steps must be >= 1, got {self.max_steps}")
+
+
+def open_ended_goal(max_steps: int, notes: str | None = None) -> Goal:
+    """The open-ended evaluation goal, capped at ``max_steps`` (D65, D67)."""
+    return Goal(OPEN_ENDED_DESCRIPTION, max_steps=max_steps, notes=notes, open_ended=True)
 
 
 @dataclass
