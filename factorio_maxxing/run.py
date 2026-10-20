@@ -17,9 +17,10 @@ Offline smoke run (build-plan section 22):
 import argparse
 import json
 import logging
+import subprocess
 import sys
 import uuid
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,7 @@ from factorio_maxxing.envs import (
     RealFactorioEnv,
 )
 from factorio_maxxing.goal import Goal, open_ended_goal
+from factorio_maxxing.grid import BUILT_HARNESSES, GRID_CELL, HARNESSES
 from factorio_maxxing.history_report import HistoryReporter
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
@@ -190,6 +192,12 @@ class Config:
     api_reference: str = ""
     """Path to a file describing the functions the environment provides. Empty
     means the policy is told nothing about the API and will invent one."""
+    grid_cell: str = ""
+    """Which evaluation-grid cell this run belongs to - "1"-"8", "5'"-"8'" or "pilot" -
+    or empty for a run outside the grid. A label only: it changes nothing about the run,
+    and is recorded in the trajectory's run record (D70)."""
+    harness: str = "standard"
+    """Which harness the run uses (build-plan 5a). Only "standard" exists until E2."""
 
 
 def load_config(path: Path | str) -> dict[str, Any]:
@@ -354,6 +362,40 @@ def resolve_config(args: argparse.Namespace) -> Config:
     return Config(**values)
 
 
+def check_grid(config: Config) -> None:
+    """Refuse a grid cell or harness the experiment does not have (D70)."""
+    if config.grid_cell and not GRID_CELL.match(config.grid_cell):
+        raise ConfigError(
+            f"unknown grid cell {config.grid_cell!r}: use 1-8, 5'-8' or pilot"
+        )
+    if config.harness not in HARNESSES:
+        raise ConfigError(f"unknown harness {config.harness!r}")
+    if config.harness not in BUILT_HARNESSES:
+        raise ConfigError(f"the {config.harness} harness is not built yet (E2)")
+
+
+def code_version() -> dict[str, object]:
+    """The commit this code came from, and whether it had uncommitted changes.
+
+    Recorded so a run can be traced to the harness that produced it - which is what
+    freezing the standard harness relies on. Outside a git checkout both are None.
+    """
+    here = Path(__file__).resolve().parent
+
+    def git(*args: str) -> str | None:
+        try:
+            done = subprocess.run(
+                ["git", *args], cwd=here, capture_output=True, text=True, timeout=10
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return done.stdout.strip() if done.returncode == 0 else None
+
+    commit = git("rev-parse", "HEAD")
+    status = git("status", "--porcelain", "--untracked-files=no")
+    return {"commit": commit, "dirty": None if status is None else bool(status)}
+
+
 def build_goal(config: Config, description: str | None, notes: str | None) -> Goal:
     """The run's goal: the open-ended evaluation goal, or the ``--goal`` given (D67)."""
     if config.open_ended:
@@ -513,6 +555,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = resolve_config(args)
+        check_grid(config)
         goal = build_goal(config, args.goal, args.notes)
         env = build_environment(config)
         policy_client = build_policy_client(config)
@@ -531,6 +574,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         with TrajectoryRecorder(path, run_id=run_id) as recorder:
+            recorder.record_run(goal, asdict(config), code_version())
             result = run_goal(
                 goal,
                 env,

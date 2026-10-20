@@ -15,7 +15,7 @@ callers the harness grows (D22).
 
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +36,26 @@ class TrajectoryRecorder:
         self.run_id = run_id or uuid.uuid4().hex
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._file = self.path.open("a", encoding="utf-8", newline="\n")
+
+    def record_run(
+        self, goal: Goal, config: Mapping[str, Any], code: Mapping[str, Any]
+    ) -> None:
+        """Record what the run was: its goal, resolved config and code version (D70).
+
+        Written once, first, so a trajectory says on its own which grid cell it is,
+        which models and human backend it used, and which commit produced it. It has
+        no step. The config holds no secrets - API keys never enter it (D27) - and no
+        dollar figure beyond the configured ceiling.
+        """
+        self._write(
+            "run",
+            None,
+            goal=goal.description,
+            open_ended=goal.open_ended,
+            max_steps=goal.max_steps,
+            config=dict(config),
+            code=dict(code),
+        )
 
     def record_step(
         self,
@@ -122,7 +142,7 @@ class TrajectoryRecorder:
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def _write(self, record_type: str, step: int, **fields: Any) -> None:
+    def _write(self, record_type: str, step: int | None, **fields: Any) -> None:
         record = {"type": record_type, "run_id": self.run_id, "step": step, **fields}
         # default=str keeps an unexpected value in an observation from killing a run
         # that has already spent real API budget.

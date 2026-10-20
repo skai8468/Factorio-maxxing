@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
 
+from factorio_maxxing.grid import GRID_CELL, HARNESSES
 from factorio_maxxing.scorer import LADDER_VERSION, score_records
 from factorio_maxxing.trajectory import read_trajectory
 
@@ -64,10 +65,7 @@ GUIDANCE_CODES = {
 }
 """Codebook v0, as in the workbook's codebook sheets; a test keeps the two in step."""
 
-HARNESSES = ("standard", "specialized")
 UNSTUCK_VALUES = ("yes", "no", "n/a")
-GRID_CELL = re.compile(r"^(?:[1-8]|[5-8]'|pilot)$")
-"""Runs 1-8, the second budget model's 5'-8' (D64), or a pilot run."""
 
 COLUMNS = {
     "run_id": "run_id",
@@ -132,6 +130,8 @@ class RunFacts:
     last_step: int
     milestone_steps: tuple[int, ...]
     """The step at which each reached milestone first held."""
+    config: Mapping[str, Any] | None = None
+    """The run record's config (D70); None for a trajectory recorded before it."""
 
 
 def run_facts(records: Iterable[Mapping[str, Any]], run_id: str = "") -> RunFacts:
@@ -148,6 +148,7 @@ def run_facts(records: Iterable[Mapping[str, Any]], run_id: str = "") -> RunFact
         None,
     )
     steps = [int(r["step"]) for r in records if r.get("type") == "step"]
+    run = next((r for r in records if r.get("type") == "run"), None)
     score = score_records(records)
     return RunFacts(
         run_id=score.run_id or run_id,
@@ -155,6 +156,7 @@ def run_facts(records: Iterable[Mapping[str, Any]], run_id: str = "") -> RunFact
         policy_model=policy,
         last_step=max(steps, default=-1),
         milestone_steps=tuple(sorted(score.reached.values())),
+        config=run.get("config") if run else None,
     )
 
 
@@ -300,6 +302,24 @@ def _against_trajectory(row: Mapping[str, Any], facts: RunFacts) -> list[str]:
         problems.append(f"unstuck is {computed!r} by the Scorer, not {row['unstuck']!r}")
     if row["ladder_version"] != LADDER_VERSION:
         problems.append(f"ladder version must be {LADDER_VERSION}")
+    return problems + _against_run_record(row, facts.config)
+
+
+def _against_run_record(
+    row: Mapping[str, Any], config: Mapping[str, Any] | None
+) -> list[str]:
+    """What the annotator says about the run must match what the run recorded (D70)."""
+    if not config:
+        return []
+    problems = []
+    cell = config.get("grid_cell")
+    if cell and row["grid_cell"] != cell:
+        problems.append(f"grid cell is {cell!r} in the run record")
+    harness = config.get("harness")
+    if harness and row["harness"] != harness:
+        problems.append(f"harness is {harness!r} in the run record")
+    if "human" in config and row["human"] != (config["human"] != "none"):
+        problems.append(f"human backend is {config['human']!r} in the run record")
     return problems
 
 

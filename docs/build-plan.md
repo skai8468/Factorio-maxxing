@@ -155,7 +155,13 @@ and 5'-8' for GPT 6 Luna.
   reported separately (§5).
 - **The verifier uses the policy's model in every run**, and its tokens count toward
   the $50 ceiling. A frontier verifier in a budget run would be frontier help.
-- **Same world seed and starting inventory** across all eight runs of a seed.
+- **Same world and starting inventory** across every run: FLE ignores a reset seed, so
+  the world is the cluster's scenario map, and a "seed" is a repeat run. Every run starts
+  **empty-handed**, as FLE's `open_play` does (D70).
+- **Configs:** `configs/grid/cell-*.json`, one per cell - today the six standard cells
+  (1, 2, 5, 6, 5', 6'); 3, 4, 7, 8 arrive with the E2 harness. Cells differ only in model,
+  human backend and label; a test enforces it. Each run's trajectory opens with a `run`
+  record of its full config and commit (D70).
 - Further models are further rows; the grid does not change shape.
 - **Models (D64):** frontier **Claude Opus 5.5**; budget **Claude Haiku 5.5** and
   **GPT 6 Luna** - two budget rows, so the grid has 12 cells per seed.
@@ -769,7 +775,8 @@ observation fields, stale-entity trimming, history report - plus the admin-acces
 fixtures (D62) ✓ · 20. open-ended goal mode: no verifier, no intervention abort,
 repeated errors plus a 20-step backstop (D67) ✓ · 21. 300-step cap plus a `max_spend_usd` ceiling ($50, D65) computed from raw tokens
 and the pricing table (D68) ✓ · 22. annotation schema and a validator, exported from the
-codebook workbook (D69) ✓ · 23. one config per grid cell ·
+codebook workbook (D69) ✓ · 23. one config per grid cell, and a `run` record in every
+trajectory (D70) ✓ ·
 24. a live run that stops at its cap and is scored
 
 **E1** — 25. guidance protocol written · 26. pilot of runs 1, 2, 5, 6 · 27. annotate

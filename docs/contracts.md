@@ -183,10 +183,14 @@ continues (D66).
 
 ## `trajectory.py`
 
-JSONL, append-friendly. Four record types. Every record carries `type`, `run_id` and
+JSONL, append-friendly. Five record types. Every record carries `type`, `run_id` and
 `step`; `type` is the only discriminator.
 
 ```json
+{"type":"run","run_id":"...","step":null,"goal":"...","open_ended":true,
+ "max_steps":300,"config":{...every Config field...},
+ "code":{"commit":"<sha or null>","dirty":false}}
+
 {"type":"step","run_id":"...","step":0,"goal":"...","policy":"...",
  "observation":{},"reward":0.0,"execution_errors":[]}
 
@@ -205,6 +209,11 @@ JSONL, append-friendly. Four record types. Every record carries `type`, `run_id`
 
 {"type":"report","run_id":"...","step":7,"text":"..."}
 ```
+
+The `run` record (D70) is written once, first, by `run.py`: the goal, the full
+resolved `Config` (no secrets - keys never enter it) and the code's git commit with
+whether it had uncommitted changes. It has no step. Readers that count steps or calls
+ignore it. A trajectory recorded before D70 has none.
 
 A `report` record (D66) holds a history report verbatim, covering steps 0 to `step`;
 the policy reads it from the next step on. Its call is an `llm_call` with role
@@ -318,6 +327,8 @@ on any problem. No control-flow module imports this one.
   "open_ended": false,
   "backstop_steps": 20,
   "max_spend_usd": 50.0,
+  "grid_cell": "",
+  "harness": "standard",
   "history_length": 8,
   "history_report_interval": 8,
   "environment": "mock",
@@ -343,6 +354,11 @@ governs repeated errors, `non_done_threshold` consecutive non-DONE verdicts. `nu
 `--goal`): no verifier is built, and `verifier_model`, `verification_interval`,
 `non_done_threshold` and `max_interventions_without_progress` have no effect.
 `backstop_steps` is its stuck backstop (D67).
+
+`grid_cell` labels a grid run (`1`-`8`, `5'`-`8'`, `pilot`, or `""` outside the grid)
+and `harness` names its harness (`standard`; `specialized` is refused until E2). Neither
+changes the run; both reach the `run` record. The grid's configs are
+`configs/grid/cell-*.json` (D70).
 
 `max_spend_usd` (CLI `--max-spend-usd`) stops a run once its estimated spend reaches it;
 `null` turns the ceiling off. With a ceiling set, a policy or verifier model missing

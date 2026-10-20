@@ -37,6 +37,9 @@ dev = [
     "ruff>=0.6",
     "openai>=1.0",
     "anthropic>=1.0",
+    # Editing the codebook workbook (docs/codebook-v0.xlsx). The harness reads it
+    # with the standard library and never needs this (D69).
+    "openpyxl>=3.1",
 ]
 
 # Hatchling refuses a direct git reference in metadata without this, even where the

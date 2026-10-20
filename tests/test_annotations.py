@@ -85,6 +85,25 @@ def trajectory(
     return records
 
 
+def with_run_record(records, **config):
+    run = {
+        "type": "run",
+        "run_id": RUN,
+        "step": None,
+        "goal": "g",
+        "open_ended": True,
+        "max_steps": 30,
+        "config": {
+            "grid_cell": "6",
+            "harness": "standard",
+            "human": "interactive",
+            **config,
+        },
+        "code": {"commit": None, "dirty": None},
+    }
+    return [run, *records]
+
+
 def write_trajectory(directory, records=None):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{RUN}.jsonl"
@@ -560,3 +579,40 @@ def test_no_control_flow_module_reads_annotations(module):
     """Annotations are post-hoc and never read by control flow (CLAUDE.md)."""
     source = Path(f"factorio_maxxing/{module}.py").read_text(encoding="utf-8")
     assert "annotations" not in source
+
+
+# --- Against the run record (D70) -----------------------------------------------
+
+
+def test_a_run_record_that_agrees_is_accepted():
+    facts = run_facts(with_run_record(trajectory()))
+    assert facts.config["grid_cell"] == "6"
+    assert validate([row(unstuck="yes"), declined()], facts) == []
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [
+        ({"grid_cell": "2"}, "grid cell is '2' in the run record"),
+        ({"harness": "specialized"}, "harness is 'specialized' in the run record"),
+        ({"human": "none"}, "human backend is 'none' in the run record"),
+    ],
+)
+def test_an_annotation_contradicting_the_run_record_is_reported(config, message):
+    facts = run_facts(with_run_record(trajectory(), **config))
+    problems = validate([row(unstuck="yes"), declined()], facts)
+    assert any(message in p for p in problems), problems
+
+
+def test_a_run_outside_the_grid_does_not_constrain_the_cell():
+    facts = run_facts(with_run_record(trajectory(), grid_cell=""))
+    assert (
+        validate(
+            [row(unstuck="yes", grid_cell="pilot"), declined(grid_cell="pilot")], facts
+        )
+        == []
+    )
+
+
+def test_a_trajectory_from_before_the_run_record_still_validates():
+    assert FACTS.config is None

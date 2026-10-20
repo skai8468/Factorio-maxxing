@@ -27,5 +27,7 @@
   "step_timeout": null,
   "trajectory_dir": "trajectories",
   "dump_prompts": "",
-  "api_reference": "configs/fle_api_reference.md"
+  "api_reference": "configs/fle_api_reference.md",
+  "grid_cell": "",
+  "harness": "standard"
 }

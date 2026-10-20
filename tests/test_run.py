@@ -24,6 +24,8 @@ from factorio_maxxing.run import (
     build_parser,
     build_spend_meter,
     build_verifier,
+    check_grid,
+    code_version,
     load_api_reference,
     load_config,
     load_hints,
@@ -503,7 +505,12 @@ def test_the_smoke_run_writes_a_trajectory(tmp_path):
     assert len(written) == 1
 
     records = read_trajectory(written[0])
-    assert [r["type"] for r in records[:3]] == ["step", "llm_call", "verification"]
+    assert [r["type"] for r in records[:4]] == [
+        "run",
+        "step",
+        "llm_call",
+        "verification",
+    ]
     assert records[-1]["done"] is True
     assert len({r["run_id"] for r in records}) == 1
 
@@ -878,3 +885,128 @@ def test_every_shipped_config_names_priced_models():
     for path in Path("configs").glob("*.json"):
         if "_model" in path.read_text(encoding="utf-8"):
             build_spend_meter(Config(**load_config(path)))
+
+
+GRID = Path("configs/grid")
+CELL_VARIABLES = {"policy_model", "verifier_model", "human", "grid_cell"}
+"""The only keys allowed to differ between grid cells (D70)."""
+
+
+def grid_configs():
+    return {
+        path.name: Config(**load_config(path)) for path in sorted(GRID.glob("*.json"))
+    }
+
+
+def test_the_grid_has_one_config_per_standard_cell():
+    """D70: the six standard cells now; 3, 4, 7, 8 arrive with the E2 harness."""
+    cells = {config.grid_cell for config in grid_configs().values()}
+    assert cells == {"1", "2", "5", "6", "5'", "6'"}
+
+
+def test_grid_cells_differ_only_in_model_and_human():
+    configs = [load_config(path) for path in sorted(GRID.glob("*.json"))]
+    shared = {
+        key: value for key, value in configs[0].items() if key not in CELL_VARIABLES
+    }
+    for config in configs[1:]:
+        assert {k: v for k, v in config.items() if k not in CELL_VARIABLES} == shared
+
+
+@pytest.mark.parametrize(
+    ("cell", "model", "human"),
+    [
+        ("1", "claude-opus-5-5", "none"),
+        ("2", "claude-opus-5-5", "interactive"),
+        ("5", "claude-haiku-5-5", "none"),
+        ("6", "claude-haiku-5-5", "interactive"),
+        ("5'", "open-router-openai/gpt-6-luna", "none"),
+        ("6'", "open-router-openai/gpt-6-luna", "interactive"),
+    ],
+)
+def test_each_cell_has_its_model_and_human(cell, model, human):
+    (config,) = [c for c in grid_configs().values() if c.grid_cell == cell]
+    assert config.policy_model == model
+    assert config.verifier_model == model  # D60: the verifier uses the policy's model
+    assert config.human == human
+
+
+def test_grid_runs_are_the_evaluation_setup():
+    """D65, D67, D70: open-ended, 300 steps, $50, empty-handed, measured settings."""
+    for name, config in grid_configs().items():
+        assert config.open_ended is True, name
+        assert config.max_steps == 300, name
+        assert config.max_spend_usd == 50.0, name
+        assert config.backstop_steps == 20, name
+        assert config.starting_inventory == {}, name
+        assert config.environment == "live", name
+        assert config.task_key == "open_play", name
+        assert config.harness == "standard", name
+        assert config.pause_after_action is True, name
+        assert config.fast_mode is True, name
+        assert config.game_speed is None, name
+        assert config.api_reference == "configs/fle_api_reference.md", name
+
+
+def test_grid_configs_pass_the_run_checks():
+    for config in grid_configs().values():
+        check_grid(config)
+        build_spend_meter(config)
+        assert build_verifier(config) is None
+
+
+def test_grid_file_names_carry_the_cell():
+    for name, config in grid_configs().items():
+        assert name.startswith(f"cell-{config.grid_cell.replace(chr(39), 'p')}-")
+
+
+@pytest.mark.parametrize("cell", ["", "1", "8", "5'", "8'", "pilot"])
+def test_grid_cells_are_accepted(cell):
+    check_grid(Config(grid_cell=cell))
+
+
+@pytest.mark.parametrize("cell", ["9", "0", "4'", "cell-1"])
+def test_an_unknown_grid_cell_is_refused(cell):
+    with pytest.raises(ConfigError, match="unknown grid cell"):
+        check_grid(Config(grid_cell=cell))
+
+
+def test_the_specialized_harness_is_refused_until_e2(tmp_path, capsys):
+    with pytest.raises(ConfigError, match="not built yet"):
+        check_grid(Config(harness="specialized"))
+    path = write_config(tmp_path, harness="specialized")
+    exit_code = main(
+        [*OPEN_ENDED_ARGS, "--config", str(path), "--trajectory-dir", str(tmp_path)]
+    )
+    assert exit_code == 2
+    assert "not built yet" in capsys.readouterr().err
+
+
+def test_an_unknown_harness_is_refused():
+    with pytest.raises(ConfigError, match="unknown harness"):
+        check_grid(Config(harness="fancy"))
+
+
+def test_every_trajectory_opens_with_its_run_record(tmp_path):
+    path = write_config(tmp_path, grid_cell="pilot")
+    main([*OPEN_ENDED_ARGS, "--config", str(path), "--trajectory-dir", str(tmp_path)])
+    records = read_trajectory(next(tmp_path.glob("*.jsonl")))
+
+    run = records[0]
+    assert run["type"] == "run"
+    assert run["step"] is None
+    assert run["goal"] == OPEN_ENDED_DESCRIPTION
+    assert run["open_ended"] is True
+    assert run["max_steps"] == 5
+    assert run["config"]["grid_cell"] == "pilot"
+    assert run["config"]["human"] == "none"
+    assert run["config"]["policy_model"] == "stub"
+    assert set(run["config"]) == {f.name for f in fields(Config)}
+    assert set(run["code"]) == {"commit", "dirty"}
+    assert [r["type"] for r in records].count("run") == 1
+
+
+def test_the_code_version_names_this_checkout():
+    version = code_version()
+    assert version["commit"] is None or len(version["commit"]) == 40
+    assert version["dirty"] in (True, False, None)

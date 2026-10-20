@@ -2447,7 +2447,51 @@ is the trajectory's full text (782 characters for step 65, truncated in the shee
 the computed `unstuck` - yes, no, no, yes - matches what was coded by hand. The other five
 stuck events (steps 29, 39, 49, 75, 85) are reported as not yet annotated.
 
-**Not done here.** The workbook's README still shows the draft unstuck rule and column P
-is still yellow; updating the workbook needs a spreadsheet editor and is left to the
-research lead.
+**Workbook updated in D70's change** (openpyxl, now a dev dependency): the README states
+this rule and the export step, column P is grey (computed), the legend names the
+columns export copies from the trajectory, and the grid-cell column has a drop-down.
+
+---
+
+## D70 - One config per standard grid cell, empty-handed, and a run record in every trajectory
+
+**Decision (research lead, 2026-10-20)**, E0 step 23.
+
+1. **Configs for the standard cells only:** `configs/grid/cell-1-opus.json`,
+   `cell-2-opus-human.json`, `cell-5-haiku.json`, `cell-6-haiku-human.json`,
+   `cell-5p-luna.json`, `cell-6p-luna-human.json`. Cells 3, 4, 7, 8 are written in E2,
+   when there is a specialized harness to point them at; `harness: "specialized"` is
+   refused until then. *Recommended option.*
+2. **Every run starts empty-handed**, as FLE's `open_play` does. *Not the recommended
+   option* (the 3-drill, 2-furnace kit of the measured runs). It matches FLE's own
+   open-play setup; the cost is early steps spent mining stone and crafting a furnace
+   out of 300. Supersedes D62's note that "the grid uses one kit", which assumed the
+   measured kit; an empty kit still credits no rung.
+3. **A `run` record opens every trajectory** - goal, full resolved config, git commit and
+   whether the tree had uncommitted changes - so a trajectory says on its own which cell
+   it is, with which models and human backend, from which code. E4 must regenerate results
+   from trajectories and annotations alone. *Recommended option.*
+
+**What the cells share.** Open-ended goal (D67), 300 steps (D65), $50 ceiling (D68),
+20-step backstop, repeated-error threshold 3, 8-step history plus report (D66), live
+`open_play`, paused between steps, fast mode, FLE's game speed, peaceful, the shipped API
+reference. Each cell differs only in `policy_model` (= `verifier_model`, D60; unused on
+an open-ended goal), `human` (`none` / `interactive`) and `grid_cell`; a test fails if
+anything else drifts. Models: `claude-opus-5-5`, `claude-haiku-5-5`,
+`open-router-openai/gpt-6-luna` (D64, D66).
+
+**Seeds.** FLE's `reset()` ignores its `seed` argument ("Not used", 0.4.8), and the map
+comes from the cluster's scenario, so every run plays the same world. A grid "seed" is a
+repeat run - model sampling is the variance - and needs no config key.
+
+**Annotations use the run record.** When a trajectory has one, `validate` checks an
+annotation's grid cell, harness and human against it (D69); older trajectories are
+checked as before.
+
+**Code version.** `run.py` records `git rev-parse HEAD` and whether tracked files had
+uncommitted changes. Freezing the standard harness (`standard-harness-v1`) can then be
+checked run by run: a grid run should name the frozen commit and `dirty: false`.
+
+**Run a cell:** `python -m factorio_maxxing.run --config configs/grid/cell-5-haiku.json`
+(live cluster running; no `--goal`).
 
