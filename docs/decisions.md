@@ -2372,3 +2372,34 @@ goals; in the grid, the Scorer is the only measure of progress. The backstop's 2
 default, not a calibrated value - E1's pilot shows whether it asks too often or too
 rarely. Runs 3/4 and 7/8 may replace the backstop with a specialized detector from E2.
 
+---
+
+## D68 - The spend ceiling is priced per call at run time and never recorded
+
+**Implementation of D65's $50 ceiling** (E0 step 21). The 300-step cap needs no new
+code: it is `max_steps`, which the per-cell configs set to 300 (step 23).
+
+- **One table.** `pricing.SpendMeter` prices each model call with `call_cost` - the
+  function the end-of-run summary uses - from the response's raw tokens, including
+  Haiku 5.5's above-100K tier, so the ceiling and the printed estimate cannot disagree.
+  Policy, verifier and history-report calls all count (D60, D65); a human answer costs
+  nothing.
+- **Never recorded (D9, D55).** The running total lives in memory. The trajectory keeps
+  raw tokens only; a test asserts it holds no `$` and no cost field after a run that hit
+  the ceiling. `GoalResult.reason` is `"spend ceiling reached"`, and the usage summary
+  prints the estimate as before.
+- **When it stops.** After each step's calls, and after the environment-terminated check,
+  and before the stuck detector - so no human is paged for a run that is about to end. A
+  run can therefore overshoot by at most one step's calls (Opus 5.5: ~$0.10-0.20 per step
+  by D66's measurements). Predicting the next step's cost to stop under the line was
+  rejected as complexity a safety net does not need.
+- **Default on.** `Config.max_spend_usd` defaults to 50.0, so every run - including ad
+  hoc ones - carries D65's ceiling; `null` turns it off. Every shipped config sets it.
+- **Refuse what cannot be enforced.** With a ceiling set, a policy or (on a fixed goal)
+  verifier model missing from the pricing table is a configuration error before the run
+  starts, rather than a meter silently counting $0. The offline `stub` is exempt.
+
+**For the research lead.** The ceiling and its default are D65's; the choices above
+(default on, refuse unpriced models, stop after the step that crosses the line) are
+implementation calls and can be revisited.
+

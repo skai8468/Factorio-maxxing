@@ -761,7 +761,7 @@ observation fields, stale-entity trimming, history report - plus the admin-acces
 (D66) ✓ · 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
 fixtures (D62) ✓ · 20. open-ended goal mode: no verifier, no intervention abort,
 repeated errors plus a 20-step backstop (D67) ✓ · 21. 300-step cap plus a `max_spend_usd` ceiling ($50, D65) computed from raw tokens
-and the pricing table · 22. annotation schema and a validator · 23. one config per grid cell ·
+and the pricing table (D68) ✓ · 22. annotation schema and a validator · 23. one config per grid cell ·
 24. a live run that stops at its cap and is scored
 
 **E1** — 25. guidance protocol written · 26. pilot of runs 1, 2, 5, 6 · 27. annotate

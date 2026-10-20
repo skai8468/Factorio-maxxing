@@ -217,7 +217,10 @@ widening is needed when a new caller arrives (see `decisions.md` D22). Pricing a
 prices the uncached, cache-read and cache-write shares separately (D51). The single pricing table
 is `factorio_maxxing/pricing.py`; `run.py` prints each run's estimated cost from it when
 the run ends, and `python -m factorio_maxxing.pricing <trajectory>` prices any recorded
-run. The estimate is printed, never written to a trajectory (D55). `llm_call` records carry
+run. The estimate is printed, never written to a trajectory (D55). The same table
+drives the run-time spend ceiling: `pricing.SpendMeter(ceiling_usd)` prices each call
+as `run_goal(..., spend=meter)` records it, keeps the total in memory, and the loop ends
+the run with `reason="spend ceiling reached"` once `meter.exceeded()` (D68). `llm_call` records carry
 `key_id` - the paying key's fingerprint - whenever the client used a key, and
 `python -m factorio_maxxing.spend` totals the estimate per key across all trajectories
 (D56).
@@ -281,6 +284,7 @@ first step of each rung.
   "max_steps": 32,
   "open_ended": false,
   "backstop_steps": 20,
+  "max_spend_usd": 50.0,
   "history_length": 8,
   "history_report_interval": 8,
   "environment": "mock",
@@ -306,6 +310,11 @@ governs repeated errors, `non_done_threshold` consecutive non-DONE verdicts. `nu
 `--goal`): no verifier is built, and `verifier_model`, `verification_interval`,
 `non_done_threshold` and `max_interventions_without_progress` have no effect.
 `backstop_steps` is its stuck backstop (D67).
+
+`max_spend_usd` (CLI `--max-spend-usd`) stops a run once its estimated spend reaches it;
+`null` turns the ceiling off. With a ceiling set, a policy or verifier model missing
+from the pricing table is refused before the run starts; the offline `stub` is exempt
+(D68).
 
 API keys come from environment variables, never this file. For an identity-linked API
 key, `ANTHROPIC_WORKSPACE_ID` must be set alongside the key (`decisions.md` D27).

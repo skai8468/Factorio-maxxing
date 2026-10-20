@@ -36,7 +36,7 @@ from factorio_maxxing.history_report import HistoryReporter
 from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
 from factorio_maxxing.loop import run_goal
-from factorio_maxxing.pricing import format_summary, summarize
+from factorio_maxxing.pricing import SpendMeter, format_summary, has_price, summarize
 from factorio_maxxing.stuck import default_detector, open_ended_detector
 from factorio_maxxing.trajectory import TrajectoryRecorder, read_trajectory
 from factorio_maxxing.verifier import LLMVerifier, StubVerifier, VerificationResult
@@ -120,6 +120,13 @@ class Config:
     `max_interventions_without_progress`, `verification_interval`, `verifier_model` and
     `non_done_threshold` have no effect."""
     backstop_steps: int = 20
+    max_spend_usd: float | None = 50.0
+    """Stop the run once its estimated spend reaches this many US dollars (D65, D68).
+
+    Every model call is priced as it is made, from raw tokens and the pricing table;
+    the figure is kept in memory and printed, never recorded. None turns the ceiling
+    off. With a ceiling set, a model missing from the pricing table is refused before
+    the run starts, since its calls could not be counted."""
     """Open-ended runs only: steps without a request for help before the harness asks
     anyway - the stand-in for the non-DONE backstop, which needs a verifier (D67)."""
     history_length: int = 8
@@ -262,6 +269,11 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         help="open-ended runs: steps without a request for help before asking (D67)",
     )
+    parser.add_argument(
+        "--max-spend-usd",
+        type=float,
+        help="stop once the run's estimated spend reaches this many dollars (D68)",
+    )
     parser.add_argument("--history-length", type=int)
     parser.add_argument(
         "--history-report-interval",
@@ -325,6 +337,7 @@ def resolve_config(args: argparse.Namespace) -> Config:
         "non_done_threshold": args.non_done_threshold,
         "open_ended": True if args.open_ended else None,
         "backstop_steps": args.backstop_steps,
+        "max_spend_usd": args.max_spend_usd,
         "history_length": args.history_length,
         "history_report_interval": args.history_report_interval,
         "dump_prompts": args.dump_prompts,
@@ -441,6 +454,25 @@ def build_verifier(config: Config):
     return LLMVerifier(_api_client(config.verifier_model))
 
 
+def build_spend_meter(config: Config) -> SpendMeter:
+    """The run's spend meter, refusing a ceiling it could not enforce (D68).
+
+    The policy's model also writes the history report; the verifier's model is in use
+    unless the run is open-ended. The offline stub costs nothing and needs no price.
+    """
+    if config.max_spend_usd is not None:
+        models = [config.policy_model]
+        if not config.open_ended:
+            models.append(config.verifier_model)
+        unpriced = [m for m in models if m != STUB_MODEL and not has_price(m)]
+        if unpriced:
+            raise ConfigError(
+                f"no price for {', '.join(unpriced)}, so the spend ceiling cannot be "
+                "enforced: add it to pricing.PRICES, or set max_spend_usd to null"
+            )
+    return SpendMeter(config.max_spend_usd)
+
+
 def build_human(config: Config, hints_path: str | None):
     if config.human == "none":
         return NoHuman()
@@ -488,6 +520,7 @@ def main(argv: list[str] | None = None) -> int:
         verifier = build_verifier(config)
         human = build_human(config, args.hints)
         detector = build_detector(config)
+        spend = build_spend_meter(config)
         api_reference = load_api_reference(config)
     except (ConfigError, ValueError, OSError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -511,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
                 history_length=config.history_length,
                 max_interventions=config.max_interventions_without_progress,
                 reporter=reporter,
+                spend=spend,
             )
     except KeyboardInterrupt:
         # The steps already taken were paid for: report them before exiting.

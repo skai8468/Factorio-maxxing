@@ -13,6 +13,11 @@ Two counters, per D12:
 - ``interventions`` does not reset, and aborts the goal at ``max_interventions``. With
   no progress signal defined at M0/M1 this is a hard cap on interventions per goal.
 
+A spend ceiling (D65, D68) ends a run once its estimated spend - every model call,
+priced as it is made - reaches the ceiling. It is checked after each step's calls, so a
+run overshoots by at most one step's cost, and before the stuck detector, so no human
+is paged for a run that is about to stop.
+
 An open-ended goal (D67) has no finish line: the verifier is never consulted and the
 intervention cap never aborts, so the run ends at ``max_steps`` - or earlier only if the
 environment ends it - and a guided run lasts as long as its unguided twin.
@@ -20,7 +25,7 @@ environment ends it - and a guided run lasts as long as its unguided twin.
 
 import logging
 import re
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from factorio_maxxing import context
@@ -28,7 +33,8 @@ from factorio_maxxing.envs import Action, EnvProtocol
 from factorio_maxxing.goal import Goal, GoalResult
 from factorio_maxxing.history_report import HistoryReporter
 from factorio_maxxing.human import HumanProtocol
-from factorio_maxxing.llm import LLMClient, extract_policy
+from factorio_maxxing.llm import LLMClient, LLMResponse, extract_policy
+from factorio_maxxing.pricing import SpendMeter
 from factorio_maxxing.rendering import render_observation
 from factorio_maxxing.stuck import StuckDetector
 from factorio_maxxing.trajectory import TrajectoryRecorder
@@ -125,6 +131,7 @@ def run_goal(
     verification_window: int = VERIFICATION_WINDOW,
     max_interventions: int = MAX_INTERVENTIONS,
     reporter: HistoryReporter | None = None,
+    spend: SpendMeter | None = None,
 ) -> GoalResult:
     """Run one goal to completion, failure, or abort.
 
@@ -135,6 +142,9 @@ def run_goal(
     current observation lists them (D66). With a ``reporter``, a history report is
     rewritten after every ``reporter.interval`` steps and shown to the policy; its
     call is recorded as a ``summarizer`` llm_call and its text as a ``report`` record.
+
+    With a ``spend`` meter, every call is also priced as it is made, and the run ends
+    with ``"spend ceiling reached"`` once the meter reports its ceiling exceeded.
     """
     if verifier is None and not goal.open_ended:
         raise ValueError("a goal that can be completed needs a verifier")
@@ -155,6 +165,11 @@ def run_goal(
     # how D12's reset is implemented: the detector holds no counters (D20).
     marks = dict(history=0, verifications=0, errors=0, flows=0)
     interventions = 0
+
+    def charge(step: int, role: str, response: LLMResponse) -> None:
+        recorder.record_llm_call(step, role, response)
+        if spend is not None:
+            spend.add(response)
 
     def result(completed: bool, steps_used: int, reason: str) -> GoalResult:
         return GoalResult(
@@ -189,14 +204,14 @@ def run_goal(
         step_errors = execution_errors(observation, info)
 
         recorder.record_step(step, goal, policy, observation, reward, step_errors)
-        recorder.record_llm_call(step, "policy", response)
+        charge(step, "policy", response)
 
         errors.append("\n".join(step_errors))
         flows.append(observation.get("flows"))
 
         if checker is not None and step % verification_interval == 0:
             verdict = checker.check(goal, rendered, window[-verification_window:])
-            _record_verifier_usage(recorder, step, checker)
+            _record_verifier_usage(charge, step, checker)
             verifications.append(verdict)
             recorder.record_verification(step, verdict)
             if verdict.done:
@@ -213,7 +228,7 @@ def run_goal(
             except Exception as error:  # noqa: BLE001 - memory must not end a run
                 logging.warning("history report failed at step %d: %s", step, error)
             else:
-                recorder.record_llm_call(step, "summarizer", written)
+                charge(step, "summarizer", written)
                 if written.text.strip():
                     report, report_until = written.text.strip(), step
                     recorder.record_report(step, report)
@@ -221,6 +236,9 @@ def run_goal(
         if terminated or truncated:
             state = "terminated" if terminated else "truncated"
             return result(False, step + 1, f"environment {state}")
+
+        if spend is not None and spend.exceeded():
+            return result(False, step + 1, "spend ceiling reached")
 
         stuck, why = detector.is_stuck(
             history[marks["history"] :],
@@ -269,7 +287,7 @@ def _latest_errors(errors: Sequence[str]) -> list[str]:
 
 
 def _record_verifier_usage(
-    recorder: TrajectoryRecorder, step: int, verifier: Verifier
+    charge: Callable[[int, str, LLMResponse], None], step: int, verifier: Verifier
 ) -> None:
     """Record verifier usage when the verifier actually called a model.
 
@@ -279,7 +297,7 @@ def _record_verifier_usage(
     """
     response = getattr(verifier, "last_response", None)
     if response is not None:
-        recorder.record_llm_call(step, "verifier", response)
+        charge(step, "verifier", response)
 
 
 def _ask_and_record(

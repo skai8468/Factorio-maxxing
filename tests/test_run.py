@@ -22,6 +22,7 @@ from factorio_maxxing.run import (
     build_goal,
     build_human,
     build_parser,
+    build_spend_meter,
     build_verifier,
     load_api_reference,
     load_config,
@@ -824,3 +825,56 @@ def test_open_ended_smoke_run(tmp_path, capsys):
     assert [r["step"] for r in records if r["type"] == "step"] == list(range(5))
     assert not [r for r in records if r["type"] == "verification"]
     assert records[0]["goal"] == OPEN_ENDED_DESCRIPTION
+
+
+def test_the_spend_ceiling_defaults_to_fifty_dollars():
+    """D65: every run carries the $50 safety ceiling unless a config turns it off."""
+    assert Config().max_spend_usd == 50.0
+    assert build_spend_meter(Config()).ceiling_usd == 50.0
+
+
+def test_the_spend_ceiling_flag_overrides_the_config(tmp_path):
+    path = write_config(tmp_path, max_spend_usd=50.0)
+    args = parse("--config", str(path), "--max-spend-usd", "12.5")
+    assert resolve_config(args).max_spend_usd == 12.5
+
+
+def test_a_null_ceiling_turns_the_meter_off(tmp_path):
+    path = write_config(tmp_path, max_spend_usd=None)
+    meter = build_spend_meter(resolve_config(parse("--config", str(path))))
+    assert meter.ceiling_usd is None
+
+
+def test_a_ceiling_on_an_unpriced_model_is_refused():
+    with pytest.raises(ConfigError, match="no price for some-model"):
+        build_spend_meter(Config(policy_model="some-model"))
+    with pytest.raises(ConfigError, match="no price for other-model"):
+        build_spend_meter(Config(verifier_model="other-model"))
+
+
+def test_an_unpriced_model_runs_when_the_ceiling_is_off():
+    assert build_spend_meter(Config(policy_model="some-model", max_spend_usd=None))
+
+
+def test_an_open_ended_run_needs_no_price_for_the_unused_verifier():
+    meter = build_spend_meter(Config(open_ended=True, verifier_model="other-model"))
+    assert meter.ceiling_usd == 50.0
+
+
+def test_the_stub_needs_no_price():
+    assert build_spend_meter(Config(policy_model="stub", verifier_model="stub"))
+
+
+def test_a_ceiling_of_zero_exits_cleanly(tmp_path, capsys):
+    exit_code = main(
+        [*OPEN_ENDED_ARGS, "--max-spend-usd", "0", "--trajectory-dir", str(tmp_path)]
+    )
+    assert exit_code == 2
+    assert "positive" in capsys.readouterr().err
+
+
+def test_every_shipped_config_names_priced_models():
+    """A shipped config must not fail the ceiling check at the start of a live run."""
+    for path in Path("configs").glob("*.json"):
+        if "_model" in path.read_text(encoding="utf-8"):
+            build_spend_meter(Config(**load_config(path)))

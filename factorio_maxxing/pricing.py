@@ -8,6 +8,10 @@ table, and what it computes is printed, never recorded.
 uncached input (``input - cache_read - cache_write``) plus cache reads, cache writes and
 output, each at its own rate.
 
+The same table drives the run-time spend ceiling (D65, D68): ``SpendMeter`` prices each
+call as it is made and keeps the total in memory, so the loop can stop a run; the total
+is still never written to a trajectory.
+
 Usable on any trajectory, including one from an interrupted run::
 
     python -m factorio_maxxing.pricing trajectories/<run>.jsonl
@@ -82,6 +86,11 @@ def price_key(model: str) -> str:
     return key.replace(".", "-")
 
 
+def has_price(model: str) -> bool:
+    """Whether ``model`` is in the pricing table."""
+    return price_key(model) in PRICES
+
+
 def call_cost(record: dict[str, Any]) -> float | None:
     """The estimated dollar cost of one ``llm_call`` record, or None if unpriced."""
     price = PRICES.get(price_key(str(record.get("model", ""))))
@@ -104,6 +113,43 @@ def call_cost(record: dict[str, Any]) -> float | None:
         + write * price.cache_write
         + output * price.output
     ) / 1_000_000
+
+
+class SpendMeter:
+    """A run's estimated spend, totalled as calls are made, against a ceiling (D68).
+
+    Kept in memory only: what it computes stops a run and is printed, never recorded
+    (D9, D55). Calls to a model missing from the table add nothing and are named in
+    ``unpriced``; ``run.py`` refuses a ceiling it could not enforce before the run
+    starts, so in practice only the offline ``stub`` lands there.
+    """
+
+    def __init__(self, ceiling_usd: float | None = None):
+        if ceiling_usd is not None and ceiling_usd <= 0:
+            raise ValueError(f"spend ceiling must be positive, got {ceiling_usd}")
+        self.ceiling_usd = ceiling_usd
+        self.spent_usd = 0.0
+        self.unpriced: set[str] = set()
+
+    def add(self, response: Any) -> None:
+        """Price one model response by its raw usage and add it to the total."""
+        cost = call_cost(
+            {
+                "model": response.model,
+                "input_tokens": response.input_tokens,
+                "output_tokens": response.output_tokens,
+                "cache_read_tokens": response.cache_read_tokens,
+                "cache_write_tokens": response.cache_write_tokens,
+            }
+        )
+        if cost is None:
+            self.unpriced.add(str(response.model))
+        else:
+            self.spent_usd += cost
+
+    def exceeded(self) -> bool:
+        """True once the estimated spend has reached the ceiling. Never, without one."""
+        return self.ceiling_usd is not None and self.spent_usd >= self.ceiling_usd
 
 
 @dataclass

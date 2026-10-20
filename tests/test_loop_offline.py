@@ -11,8 +11,9 @@ import pytest
 from factorio_maxxing.envs import MockFactorioEnv, MockFrame
 from factorio_maxxing.goal import Goal, open_ended_goal
 from factorio_maxxing.human import NoHuman, ScriptedHuman
-from factorio_maxxing.llm import StubLLMClient
+from factorio_maxxing.llm import LLMResponse, StubLLMClient
 from factorio_maxxing.loop import run_goal
+from factorio_maxxing.pricing import SpendMeter
 from factorio_maxxing.stuck import (
     ConsecutiveNonDoneDetector,
     default_detector,
@@ -260,3 +261,93 @@ def test_the_backstop_asks_after_each_quiet_stretch(tmp_path):
         r["stuck_reason"] == "2 steps without a request for help" for r in requests
     )
     assert all(r["text"] is None for r in requests)
+
+
+class PricedClient:
+    """Replies with a fixed text and 10,000 output tokens on a priced model.
+
+    At Opus 5.5's $20 per million output tokens every call costs $0.20.
+    """
+
+    def __init__(self, texts, model="claude-opus-5-5"):
+        self.inner = StubLLMClient(texts)
+        self.model = model
+
+    def generate(self, prompt):
+        text = self.inner.generate(prompt).text
+        return LLMResponse(
+            text=text,
+            model=self.model,
+            input_tokens=0,
+            output_tokens=10_000,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            latency_seconds=0.0,
+        )
+
+
+def run_metered(path, spend, *, goal=None, verifier=None, detector=None, human=None):
+    with TrajectoryRecorder(path, run_id="run-1") as recorder:
+        result = run_goal(
+            goal or open_ended_goal(6),
+            mining_env(),
+            PricedClient(POLICIES),
+            verifier,
+            human or NoHuman(),
+            detector or open_ended_detector(3, backstop_steps=20),
+            recorder,
+            spend=spend,
+        )
+    return result, read_trajectory(path)
+
+
+def test_a_run_stops_at_the_step_that_reaches_the_spend_ceiling(tmp_path):
+    spend = SpendMeter(0.50)
+    result, records = run_metered(tmp_path / "run.jsonl", spend)
+    assert result.completed is False
+    assert result.reason == "spend ceiling reached"
+    assert result.steps_used == 3
+    assert spend.spent_usd == pytest.approx(0.60)
+    assert [r["step"] for r in records if r["type"] == "step"] == [0, 1, 2]
+
+
+def test_no_human_is_asked_once_the_ceiling_is_reached(tmp_path):
+    """The backstop would fire at step 2; the run stops there first."""
+    _, records = run_metered(
+        tmp_path / "run.jsonl",
+        SpendMeter(0.50),
+        detector=open_ended_detector(3, backstop_steps=3),
+        human=ScriptedHuman(["a hint that should never be asked for"]),
+    )
+    assert not [r for r in records if r["type"] == "intervention"]
+
+
+def test_a_run_under_its_ceiling_ends_at_its_step_cap(tmp_path):
+    spend = SpendMeter(50.0)
+    result, _ = run_metered(tmp_path / "run.jsonl", spend)
+    assert result.reason == "max_steps reached"
+    assert result.steps_used == 6
+    assert spend.spent_usd == pytest.approx(1.20)
+
+
+def test_verifier_calls_count_toward_the_ceiling(tmp_path):
+    """D60: the verifier's tokens are part of the run's budget."""
+    spend = SpendMeter(0.50)
+    result, _ = run_metered(
+        tmp_path / "run.jsonl",
+        spend,
+        goal=Goal(description="Build a working iron mining setup", max_steps=6),
+        verifier=LLMVerifier(PricedClient(["NOT DONE - no drill yet"])),
+        detector=default_detector(3, non_done_threshold=10),
+    )
+    assert result.reason == "spend ceiling reached"
+    assert result.steps_used == 2
+    assert spend.spent_usd == pytest.approx(0.80)
+
+
+def test_the_spend_total_is_never_recorded(tmp_path):
+    """D9, D55: the meter stops runs; the trajectory still holds raw tokens only."""
+    _, records = run_metered(tmp_path / "run.jsonl", SpendMeter(0.50))
+    text = (tmp_path / "run.jsonl").read_text(encoding="utf-8")
+    assert "$" not in text
+    assert not [r for r in records if "cost" in r or "spent_usd" in r]

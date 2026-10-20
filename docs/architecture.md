@@ -24,7 +24,7 @@ Human: goal (fixed, or open-ended "progress as far as you can")
 (passive)      │stuck                     │
           ask_human() → guidance ─────────┘
 
- stop: 300 steps, or estimated spend ≥ $50 → end   (E0, D65)
+ stop: 300 steps, or estimated spend ≥ $50 → end   (E0, D65, D68)
  annotations/<run_id>.jsonl — hand-written after the run, never read by the loop
 ```
 

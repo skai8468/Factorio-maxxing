@@ -4,13 +4,16 @@ Dollars are computed from raw token counts at analysis time and printed, never s
 """
 
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from factorio_maxxing.pricing import (
     PRICES,
+    SpendMeter,
     call_cost,
     format_summary,
+    has_price,
     main,
     price_key,
     summarize,
@@ -144,3 +147,64 @@ def test_gpt_6_luna_is_priced_through_openrouter():
 def test_opus_5_5_thinking_bills_as_output():
     cost = call_cost(_call("claude-opus-5-5", 1_000, 3_000))
     assert cost == pytest.approx((1_000 * 4.00 + 3_000 * 20.00) / 1e6)
+
+
+def response(model="claude-opus-5-5", inp=0, read=0, write=0, out=0):
+    return SimpleNamespace(
+        model=model,
+        input_tokens=inp,
+        cache_read_tokens=read,
+        cache_write_tokens=write,
+        output_tokens=out,
+    )
+
+
+def test_a_configured_model_name_has_a_price_by_its_key():
+    assert has_price("claude-opus-5-5")
+    assert has_price("open-router-anthropic/claude-haiku-4.5")
+    assert not has_price("stub")
+
+
+def test_the_meter_totals_calls_at_the_table_rates():
+    meter = SpendMeter(50.0)
+    meter.add(response(out=1_000_000))
+    meter.add(response(inp=1_000_000))
+    assert meter.spent_usd == pytest.approx(
+        PRICES["claude-opus-5-5"].output + PRICES["claude-opus-5-5"].input
+    )
+
+
+def test_the_meter_prices_a_call_exactly_as_the_summary_does():
+    """One table, one formula: the ceiling and the printed estimate cannot disagree."""
+    meter = SpendMeter()
+    meter.add(response(model="claude-haiku-5-5", inp=150_000, read=90_000, out=2_000))
+    record = call(model="claude-haiku-5-5", inp=150_000, read=90_000, out=2_000)
+    assert meter.spent_usd == pytest.approx(call_cost(record))
+
+
+def test_the_meter_is_exceeded_once_spend_reaches_the_ceiling():
+    meter = SpendMeter(PRICES["claude-opus-5-5"].output)
+    meter.add(response(out=999_999))
+    assert not meter.exceeded()
+    meter.add(response(out=1))
+    assert meter.exceeded()
+
+
+def test_a_meter_without_a_ceiling_is_never_exceeded():
+    meter = SpendMeter(None)
+    meter.add(response(out=100_000_000))
+    assert meter.spent_usd > 0
+    assert not meter.exceeded()
+
+
+def test_an_unpriced_call_adds_nothing_and_is_named():
+    meter = SpendMeter(1.0)
+    meter.add(response(model="stub", out=10_000_000))
+    assert meter.spent_usd == 0
+    assert meter.unpriced == {"stub"}
+
+
+@pytest.mark.parametrize("ceiling", [0, -5.0])
+def test_a_ceiling_must_be_positive(ceiling):
+    with pytest.raises(ValueError, match="positive"):
+        SpendMeter(ceiling)
