@@ -206,12 +206,24 @@ Confirm the outcome in `docker logs`, which prints `[JOIN] <name> joined the gam
 
 FLE's own Twitch stream is a game client: `fle/overlay.py`, a control panel meant to sit
 beside the client window, teleports player 1 to the agent over RCON every three seconds.
-`factorio_maxxing.watch` does the same ten times a second (D59). It puts each player
-in god mode before any run (no character for FLE's reset to destroy), teleports them
-onto the agent every check, and keeps them in a `watchers` permission group that allows
-no input action, so the watcher can look but never act (D47). D47's remote view centred
-on the agent tracked more smoothly but showed only the map: remote view renders live
-graphics only where the force has vision, and FLE's agent gives none.
+`factorio_maxxing.watch` keeps every connected player in god mode (no character for
+FLE's reset to destroy) and in a `watchers` permission group that allows no input
+action, so the watcher can look but never act (D47). D47's remote view centred on the
+agent showed only the map: remote view renders live graphics only where the force has
+vision, and FLE's agent gives none.
+
+**Since D63 the camera glides, the agent's actions are drawn, and a HUD shows the run.**
+Once a client has joined, `watch` installs an `on_nth_tick(1)` handler (FLE owns
+`on_tick`) that moves each watcher 15% of the way to the agent every tick, snapping
+beyond 60 tiles - replacing D59's teleport ten times a second - with zoom 0.75 and
+alt-mode on. Every 6 ticks it turns inventory changes into flying text
+(`+5 [item=iron-ore]`); every 30 ticks it highlights entities the agent placed and
+labels ones it picked up; jumps over 3 tiles leave a fading trail. Tailing the run's
+trajectory, it keeps a watcher-only panel showing step, model, spend, help requests,
+goal, the policy's stated intent, last error, the verifier's verdict, and the human's
+latest guidance. Flags: `--zoom`, `--no-cues`, `--no-hud`, `--trajectory-dir`.
+Everything is drawn for watchers only; nothing changes an entity, inventory or game
+timing. **Not yet verified with a live client** - D63 is tested offline only.
 
 On start it also **generates the map around spawn** (radius 25 chunks) while nobody is
 connected. FLE forces that same generation when a run starts, which stops the server for
@@ -302,7 +314,9 @@ never is. Success is the boiler working and steam in `FLOWS`.
   room to record (720p, 30 fps, hardware encoder, mkv).
 - OBS scene: the **Factorio window and the run's terminal side by side** (Window Capture
   method "Windows 10 (1903 and up)" for Windows Terminal). Trajectory records carry no
-  timestamps, and the help prompts are the point of the demo.
+  timestamps, and the help prompts are the point of the demo. Once D63's HUD is verified
+  live it shows the human's guidance in-game, and the terminal becomes optional - though
+  the live help prompt itself still appears only in the terminal.
 
 **Recording.**
 1. WSL terminal A - restart the cluster and start the camera, as step 1 above. Wait for

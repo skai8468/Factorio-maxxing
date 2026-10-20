@@ -263,12 +263,22 @@ first step of each rung.
   "max_interventions_without_progress": 3,
   "verification_interval": 1,
   "max_steps": 32,
-  "history_length": 16,
+  "history_length": 8,
+  "history_report_interval": 8,
   "environment": "mock",
   "trajectory_dir": "trajectories",
+  "dump_prompts": "",
   "api_reference": ""
 }
 ```
+
+Live-only keys (`task_key`, `starting_inventory`, `enable_vision`, `pause_after_action`,
+`game_speed`, `fast_mode`, `step_timeout`, `peaceful`) are omitted here;
+`configs/harness.example.json` carries every key.
+
+`history_length` is the verbatim history window and `history_report_interval` the steps
+between history reports, 0 for none (D66). `dump_prompts` names a directory to write
+every prompt the policy's model receives into, one file per call; empty writes nothing.
 
 `non_done_threshold` splits the default detector's single threshold: `stuck_threshold`
 governs repeated errors, `non_done_threshold` consecutive non-DONE verdicts. `null` uses

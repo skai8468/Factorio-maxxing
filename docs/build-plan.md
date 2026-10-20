@@ -286,9 +286,9 @@ DeepSeek. That ~$50 saving is not worth the ambiguity: during M0/M1 every failur
 be attributable primarily to harness or infrastructure problems, not weak model
 capability. No model-specific logic enters the core harness.
 
-**Superseded for the experiment by D60: a frontier row and a budget row.** The eval
-grid (§5a) runs one frontier and one budget model — both TBD by the research lead —
-with further models as further rows. The ladder above still describes development:
+**Superseded for the experiment by D60: a frontier row and budget rows.** The eval
+grid (§5a) runs **Claude Opus 5.5** as the frontier model and **Claude Haiku 5.5** and
+**GPT 6 Luna** as budget models (D64), with further models as further rows. The ladder above still describes development:
 build and debug on Haiku 4.5 so that failures stay attributable to the harness.
 
 **Model access is unrestricted.** `APIFactory.PROVIDERS` is only a `base_url` +
@@ -463,13 +463,17 @@ class HumanProtocol(Protocol):
 ```
 
 **Rendering.** `render_observation(obs) -> str` emits compact sections — `INVENTORY`,
-`ENTITIES` (position + status), `RESEARCH`, `FLOWS`, `EXECUTION`. Never send raw FLE
+`ENTITIES`, `RESEARCH`, `FLOWS`, `EXECUTION` - since D66 also `CHARACTER`, `FUNCTIONS`
+and `GAME`, with every entity in FLE-level detail (contracts.md). Never send raw FLE
 observations to the policy model. Rendering stays separate from the LLM client so
 compact/full/compressed variants can be tested without touching environment or LLM
 interfaces.
 
-**History window: 16 steps**, matching FLE's `RecursiveReportFormatter(chunk_size=16)`
-for baseline comparability. No complex memory system.
+**History window: 8 steps, plus a running history report** (D66). FLE's
+`RecursiveReportFormatter(chunk_size=16)` counts *messages* - 8 steps - and folds older
+steps into an LLM-written report; this section originally read "16 steps", mistaking
+messages for steps and dropping the report. History entries omit entity lists; only the
+current observation carries them.
 
 **Trajectory JSONL records.** Superseded: the flat field list originally given here was
 replaced by four typed record types - `step`, `llm_call`, `verification`,
@@ -510,7 +514,9 @@ Default `verification_interval: 1`. The loop must terminate **immediately** on
 `result.done` with **no further policy LLM call**.
 
 `execute_policy(policy, env)` wraps parse → validate → execute → observe. No sandbox;
-make stdout, stderr and exceptions observable and feed them back. This boundary is
+make stdout, stderr and exceptions observable and feed them back. Since D66 it refuses a
+program that reaches for admin access (`instance`, RCON, console commands, dunder
+introspection) without submitting it. This boundary is
 where repair strategies attach in future scope.
 
 ## 12. Config
@@ -525,12 +531,16 @@ where repair strategies attach in future scope.
   "max_interventions_without_progress": 3,
   "verification_interval": 1,
   "max_steps": 32,
-  "history_length": 16,
+  "history_length": 8,
+  "history_report_interval": 8,
   "environment": "mock",
   "trajectory_dir": "trajectories",
   "api_reference": ""
 }
 ```
+
+Later decisions added keys; `configs/harness.example.json` carries every one, and
+contracts.md describes them. Eval runs set `max_steps` to 300 (D65).
 
 API keys come from environment variables, never this file. An identity-linked API key
 also needs `ANTHROPIC_WORKSPACE_ID` set alongside it (`decisions.md` D27).
