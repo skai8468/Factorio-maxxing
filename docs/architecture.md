@@ -52,6 +52,7 @@ The Goal Manager (M3+) was removed with M3 (`decisions.md` D60).
 | `run.py` | CLI, config loading | Business logic |
 | `watch.py` | Keep a connected client's camera on the agent (D45) | Touch the loop, the recorder or the agent |
 | `scorer.py` *(E0)* | Milestones reached, from recorded FLE state (build-plan §5d) | Drive control flow; decide goal completion; read the verifier |
+| `annotations.py` *(E0)* | Export the codebook workbook to `annotations/<run_id>.jsonl` and validate it against the trajectory and Scorer (D69) | Be imported by control flow; edit guidance text |
 | `annotations/` *(E1+)* | Catalogue rows per stuck event (build-plan §5b) | Be read by the loop; replace verbatim guidance |
 
 ## Data flow invariants

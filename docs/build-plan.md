@@ -193,8 +193,15 @@ code; an Annotations sheet to fill in, with drop-downs restricted to the codeboo
 examples from the goal-5 rescue run, coded by Claude for the research lead to confirm;
 and a Summary sheet of counts, unstuck rates and an error x guidance cross-tab. It adds two
 annotation fields to the list above: secondary codes, and whether a hint mentioned API
-calls (the 5c protocol check). Whether E0 step 22 exports the Annotations sheet to the
-JSONL format above is decided at that step.
+calls (the 5c protocol check). **Decided at E0 step 22 (D69):** the workbook is where
+annotating happens; `python -m factorio_maxxing.annotations export` writes its
+Annotations sheet to `annotations/<run_id>.jsonl`, which analysis reads. Recorded
+fields - stuck reason, intervention index, policy model, guidance text - are copied from
+the trajectory, never the sheet. **`unstuck` is computed, not judged:** `yes` if the
+Scorer records a milestone first reached within k steps after the event (k from the
+workbook's README, 10), `n/a` if the run ends sooner, `no` otherwise. This replaces the
+README's draft "or the detector does not fire again", which D67's 20-step backstop would
+have made nearly always true.
 
 ## 5c. Guidance protocol
 
@@ -761,7 +768,8 @@ observation fields, stale-entity trimming, history report - plus the admin-acces
 (D66) ✓ · 19. `scorer.py`: milestones from a recorded trajectory, tested on recorded
 fixtures (D62) ✓ · 20. open-ended goal mode: no verifier, no intervention abort,
 repeated errors plus a 20-step backstop (D67) ✓ · 21. 300-step cap plus a `max_spend_usd` ceiling ($50, D65) computed from raw tokens
-and the pricing table (D68) ✓ · 22. annotation schema and a validator · 23. one config per grid cell ·
+and the pricing table (D68) ✓ · 22. annotation schema and a validator, exported from the
+codebook workbook (D69) ✓ · 23. one config per grid cell ·
 24. a live run that stops at its cap and is scored
 
 **E1** — 25. guidance protocol written · 26. pilot of runs 1, 2, 5, 6 · 27. annotate

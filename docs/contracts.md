@@ -269,6 +269,39 @@ construction, so no verdict can change a score. A milestone stays reached once i
 held. `python -m factorio_maxxing.scorer TRAJECTORY.jsonl ...` prints the ladder with the
 first step of each rung.
 
+## `annotations.py`
+
+One JSON object per stuck event in `annotations/<run_id>.jsonl`, keys in this order (D69):
+
+```json
+{"run_id": "...", "step": 9, "intervention_index": 0,
+ "stuck_reason": "10 consecutive non-DONE verifications",
+ "policy_model": "claude-haiku-4-5", "grid_cell": "pilot", "harness": "standard",
+ "human": true, "error_category": "E05", "error_secondary": "E03", "error_note": "...",
+ "guidance_category": "G2", "guidance_secondary": "G1", "guidance_text": "...",
+ "guidance_mentions_api": true, "unstuck": "yes", "unstuck_k": 10,
+ "ladder_version": "v0-draft", "codebook_version": "v0", "annotator": "...",
+ "notes": null}
+```
+
+- *From the trajectory, verbatim:* `intervention_index`, `stuck_reason`, `guidance_text`
+  (the intervention record's `text`; null when the request went unanswered) and
+  `policy_model` (the first `policy` llm_call's model).
+- *From the Scorer:* `unstuck` - `yes` if a milestone is first reached at a step in
+  `(step, step + unstuck_k]`, else `n/a` if the run's last step is before `step +
+  unstuck_k`, else `no` - stamped with `ladder_version`.
+- *From the annotator:* `grid_cell` (`1`-`8`, `5'`-`8'` or `pilot`), `harness`
+  (`standard` / `specialized`), `human`, the codes (`E01`-`E09`, `G1`-`G5`, codebook v0),
+  notes and `annotator`. With no guidance text the guidance fields are null; with it,
+  a primary guidance code and `guidance_mentions_api` are required. A secondary code
+  may not repeat its primary; `E09` needs an `error_note`, `G5` a `notes`.
+
+`validate(rows, run_facts(trajectory_records), complete=True) -> list[str]` returns the
+problems, empty when valid; `complete` requires exactly one row per intervention record.
+`python -m factorio_maxxing.annotations export [WORKBOOK]` writes one file per annotated
+run (none for a run with a bad row) and `... validate FILE...` checks files; both exit 1
+on any problem. No control-flow module imports this one.
+
 ## Config
 
 ```json

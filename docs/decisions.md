@@ -2403,3 +2403,51 @@ code: it is `max_steps`, which the per-cell configs set to 300 (step 23).
 (default on, refuse unpriced models, stop after the step that crosses the line) are
 implementation calls and can be revisited.
 
+---
+
+## D69 - Annotations are coded in the workbook, exported to JSONL, and 'unstuck' is computed
+
+**Decision (research lead, 2026-10-20)**, E0 step 22; both options chosen were the
+recommended ones.
+
+1. **The workbook is the annotating tool; JSONL is the store.** The research lead codes
+   stuck events in `docs/codebook-v0.xlsx` (Annotations sheet, drop-downs from the
+   codebook). `python -m factorio_maxxing.annotations export` writes
+   `annotations/<run_id>.jsonl` - one row per stuck event, diffable in git - and E4
+   analysis reads those files. Rejected: reading the workbook directly in analysis
+   (binary in git, tied to the sheet's layout) and hand-writing JSONL (no drop-downs).
+2. **`unstuck` is computed from the Scorer, milestone only:** `yes` if a milestone is
+   first reached within k steps after the event (k from the workbook's README, 10),
+   `n/a` if the run ends first, `no` otherwise. A milestone first reached at the event's
+   own step does not count - it came before the request. The README's draft added "or
+   the stuck detector does not fire again within k"; under D67 the 20-step backstop
+   cannot re-fire within 10 steps, so that clause would make almost every event `yes`.
+   Rejected: that draft rule, and a hand-entered judgement (not repeatable).
+
+**Implementation choices.**
+
+- *Recorded fields come from the trajectory, never the sheet:* intervention index,
+  stuck reason, policy model and guidance text. The trajectory is the source of truth
+  for intervention text, and a cell can truncate it (worked example 4 does). The sheet's
+  own copies of those columns are for the annotator's eye only.
+- *An `unstuck` typed into the sheet must agree with the Scorer* or the export fails, so
+  the Summary sheet's unstuck rates (which read column P) cannot silently diverge from
+  the JSONL. Leaving it blank is fine.
+- *A run with any bad row gets no file*; a run whose stuck events are not all annotated
+  yet is written and reported as incomplete (exit 1), so work in progress is saved but
+  never mistaken for done. `validate` requires one row per intervention record.
+- *The workbook is read with the standard library* (zip + XML): its sheets are plain
+  values, so a spreadsheet dependency would buy nothing. Tests keep the module's codes
+  and column names in step with the workbook.
+- *Grid cells* are `1`-`8`, `5'`-`8'` for the second budget model (D64), or `pilot`.
+
+**Checked against the record.** Exporting the workbook's four worked examples against the
+goal-5 trajectory (`20261008T180209-c4fb9b83`): all four rows validate, the guidance text
+is the trajectory's full text (782 characters for step 65, truncated in the sheet), and
+the computed `unstuck` - yes, no, no, yes - matches what was coded by hand. The other five
+stuck events (steps 29, 39, 49, 75, 85) are reported as not yet annotated.
+
+**Not done here.** The workbook's README still shows the draft unstuck rule and column P
+is still yellow; updating the workbook needs a spreadsheet editor and is left to the
+research lead.
+
