@@ -2721,3 +2721,35 @@ thinking, as on the direct path.
 **For comparability,** a run's `run` record names the model string, so direct and
 OpenRouter runs stay distinguishable; the pilot runs so far are not grid data either way.
 
+---
+
+## D78 - The standing instructions keep FLE's framing verbatim and add nothing FLE does not say
+
+**Decision (research lead, 2026-10-21)**, after comparing `context.HOW_TO_PLAY` line by
+line with FLE's `GYM_AGENT_INSTRUCTIONS` (D66 had adapted it). Three differences were
+corrected, so "a baseline modelled on FLE's published agent" holds:
+
+1. **FLE's role line restored verbatim:** *"You are an AI agent designed to play Factorio
+   through a gym environment, specializing in: Long-horizon planning · Spatial reasoning
+   · Systematic automation."* The adaptation had dropped it, so nothing told the model
+   that automation was its job.
+2. **FLE's "automated structures" wording restored:** *"Avoid breaking existing
+   automated structures; preserve working automated structures"* (was "do not break
+   structures that already work").
+3. **An added tip removed:** *"you can only place and reach things close to you, so move
+   first"* - knowledge FLE's agent is not given, which in this experiment amounts to
+   guidance.
+
+**Kept as they were:** the response format, best practices and Factorio tips (FLE's
+content); the observation guide rewritten for this harness's sections; our closing
+reminder in place of FLE's shouted one; the goal text the research lead chose (D67),
+where FLE's open play asks for "the highest automatic production score rate".
+
+**Why now.** The first full Haiku 5.5 run played almost entirely by hand - automated
+mining and smelting, but science crafted and plates carried by hand - and FLE's own
+leaderboard shows the same tendency (most milestones reached manually). Whether the
+framing changes that is for the pilot to show; it has to be settled before the standard
+harness is frozen, since any change to the instructions changes the standard harness. A
+test pins FLE's phrases and the removed tip. Applies from the next run; the cell-5 run
+`20261021T172150-ba5dcf0a` ran with the D66 text.
+

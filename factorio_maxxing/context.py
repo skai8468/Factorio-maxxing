@@ -19,10 +19,15 @@ each a program and its result - and a report of everything older; the M1 harness
 mistaken that for 16 steps and dropped the rest (D66). Older steps reach the policy
 through the HISTORY REPORT."""
 
-HOW_TO_PLAY = """You play Factorio by writing Python programs that call the game API
-documented below. Each step you send one program. It runs in the game, and you then
-see what it printed and how the game changed. Variables and functions you define
-persist between steps.
+HOW_TO_PLAY = """You are an AI agent designed to play Factorio through a gym environment,
+specializing in:
+- Long-horizon planning
+- Spatial reasoning
+- Systematic automation
+
+You play by writing Python programs that call the game API documented below. Each
+step you send one program. It runs in the game, and you then see what it printed and
+how the game changed. Variables and functions you define persist between steps.
 
 Response format:
 1. PLANNING - think it through in prose:
@@ -35,15 +40,14 @@ Best practices:
 - Keep each program small and modular: at most 50 lines, one clear purpose, easy to
   debug and modify.
 - Build incrementally and verify each step. Inspect the game state before changing it.
-- Track entities across inventories, watch for missing requirements, and do not break
-  structures that already work.
+- Track entities across inventories and watch for missing requirements.
+- Avoid breaking existing automated structures; preserve working automated structures.
 - Write direct interpreter commands; only wrap code in a function when it is a utility
   you will reuse.
 - Do not repeat steps that already succeeded - continue from where you left off.
 
 Reading the observation:
-- INVENTORY is what you carry. CHARACTER is where you stand: you can only place and
-  reach things close to you, so move first.
+- INVENTORY is what you carry. CHARACTER is where you stand.
 - ENTITIES lists everything you have built, with position, status, fuel, contents and
   warnings. Read the warnings to see why something is not working.
 - RESEARCH, FLOWS (production), FUNCTIONS (utilities you defined), GAME (time and
@@ -58,7 +62,9 @@ Factorio tips:
 - Fuel boilers manually."""
 """Standing instructions, adapted from FLE's ``GYM_AGENT_INSTRUCTIONS``
 (fle/agents/gym_agent.py, MIT - see configs/FLE_LICENSE) to this harness's sections
-(D66). Stable across a run, so they sit in the cached part beside the API reference."""
+(D66). FLE's role line and its "automated structures" wording are kept verbatim, and
+nothing is added that FLE's agent is not told (D78). Stable across a run, so they sit
+in the cached part beside the API reference."""
 
 POLICY_INSTRUCTIONS = """Work towards the goal one step at a time.
 First give a short PLANNING note: what you will do next, and why.

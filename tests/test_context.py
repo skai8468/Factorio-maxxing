@@ -238,3 +238,25 @@ def test_the_history_report_follows_the_goal():
 
 def test_no_report_section_before_the_first_report():
     assert not [h for h in headers(build(GOAL, OBSERVATION)) if "REPORT" in h]
+
+
+def test_the_standing_instructions_keep_fles_wording():
+    """D78: the standard harness is modelled on FLE's agent, so its framing is FLE's -
+    the role line, and automation named as the job - and it tells the model nothing
+    FLE's agent is not told."""
+    from factorio_maxxing.context import HOW_TO_PLAY
+
+    for phrase in (
+        "You are an AI agent designed to play Factorio through a gym environment",
+        "- Long-horizon planning",
+        "- Spatial reasoning",
+        "- Systematic automation",
+        "Avoid breaking existing automated structures",
+        "preserve working automated structures",
+        "at most 50 lines",
+        "Use transport belts to keep burner machines fed with coal.",
+        "Fuel boilers manually.",
+    ):
+        assert phrase in HOW_TO_PLAY, phrase
+    assert "move first" not in HOW_TO_PLAY
+    assert "reach things close to you" not in HOW_TO_PLAY
