@@ -81,6 +81,23 @@ def researched(obs: dict[str, Any]) -> set[str]:
     }
 
 
+def research_units(obs: dict[str, Any]) -> dict[str, int]:
+    """{technology: research units} for every researched technology. FLE records each
+    technology's ``research_unit_count`` but leaves its ingredients empty, so this is
+    units, not science packs. Factorio 2.0's trigger technologies count 1."""
+    research = obs.get("research")
+    if not isinstance(research, dict):
+        return {}
+    units = {}
+    for name, state in _technology_states(research.get("technologies")):
+        if isinstance(state, dict) and state.get("researched"):
+            try:
+                units[name] = int(state.get("research_unit_count") or 0)
+            except (TypeError, ValueError):
+                units[name] = 0
+    return units
+
+
 def produced_items(obs: dict[str, Any]) -> set[str]:
     """Items this step shows the agent having or making: inventory, flow outputs,
     crafted outputs and harvests. Flows cover one step, so this is per-observation;
@@ -288,6 +305,17 @@ class Score:
     contiguous: int = 0
     """How many rungs from the bottom were all reached: the last rung with every rung
     below it reached (D76). Equal to ``highest`` unless the run skipped a rung."""
+    research: dict[str, int] = field(default_factory=dict)
+    """Technology -> first step at which it showed researched, for technologies not
+    already researched at the run's first step (D79)."""
+    research_units: int = 0
+    """Research units of those technologies - each technology's unit count, so an
+    expensive technology weighs more than a cheap one (D79)."""
+
+    @property
+    def research_count(self) -> int:
+        return len(self.research)
+
     ladder_version: str = LADDER_VERSION
 
     @property
@@ -308,6 +336,9 @@ class ScoreTracker:
         self.reached: dict[str, int] = {}
         self.run_id: str | None = None
         self.steps = 0
+        self.start_research: set[str] | None = None
+        self.research: dict[str, int] = {}
+        self.units: dict[str, int] = {}
 
     def feed(self, record: dict[str, Any]) -> None:
         if record.get("type") != "step":
@@ -318,6 +349,13 @@ class ScoreTracker:
         if not isinstance(obs, dict):
             return
         self.history.items |= produced_items(obs)
+        units = research_units(obs)
+        if self.start_research is None and isinstance(obs.get("research"), dict):
+            self.start_research = set(units)
+        for name, count in units.items():
+            if name not in (self.start_research or set()) and name not in self.research:
+                self.research[name] = record.get("step", self.steps - 1)
+                self.units[name] = count
         for milestone in self.ladder:
             if milestone.key not in self.reached and milestone.check(obs, self.history):
                 self.reached[milestone.key] = record.get("step", self.steps - 1)
@@ -337,6 +375,8 @@ class ScoreTracker:
             reached=dict(self.reached),
             highest=highest,
             contiguous=contiguous,
+            research=dict(self.research),
+            research_units=sum(self.units.values()),
         )
 
 
@@ -361,6 +401,8 @@ def format_score(score: Score, ladder: Sequence[Milestone] = LADDER) -> list[str
         f"steps:         {score.steps}",
         f"highest:       {score.highest}/{len(ladder)} - {top}",
         f"contiguous:    {score.contiguous}/{len(ladder)}",
+        f"research:      {score.research_count} technologies, "
+        f"{score.research_units:,} units",
         f"ladder:        {score.ladder_version}",
     ]
     for index, milestone in enumerate(ladder, 1):

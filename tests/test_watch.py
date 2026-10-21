@@ -372,7 +372,8 @@ def test_the_factory_line_counts_working_entities_and_names_problems():
 
 def test_the_research_line_lists_what_is_done_and_in_progress():
     assert after(panel(), "Research") == (
-        "2 done: steam-power, electronics · researching: nothing"
+        "0 researched this run (0 units) · done: steam-power, electronics"
+        " · researching: nothing"
     )
     busy = {**OBSERVATION["research"], "current_research": "automation"}
     assert after(panel({**OBSERVATION, "research": busy}), "Research").endswith(

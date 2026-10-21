@@ -669,9 +669,11 @@ def hud_lines(state: HudState) -> list[tuple[str, str]]:
 
     if state.step is None:
         return lines
-    research = f"{len(state.researched)} done"
+    research = (
+        f"{score.research_count} researched this run ({score.research_units:,} units)"
+    )
     if state.researched:
-        research += ": " + ", ".join(state.researched)
+        research += " · done: " + ", ".join(state.researched)
     research += " · researching: " + (state.researching or "nothing")
     lines += [
         ("Inventory", "heading"),

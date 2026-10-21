@@ -2753,3 +2753,27 @@ harness is frozen, since any change to the instructions changes the standard har
 test pins FLE's phrases and the removed tip. Applies from the next run; the cell-5 run
 `20261021T172150-ba5dcf0a` ran with the D66 text.
 
+---
+
+## D79 - The Scorer reports research count and research units beside the ladder
+
+**Decision (research lead, 2026-10-21).** In the first full cell-5 run
+(`20261021T172150-ba5dcf0a`) the ladder sat at rung 13 from step 117 to 300 while the run
+researched 12 more technologies - progress the ladder cannot see. "Research count" was
+already a secondary metric (build-plan 5); it is now computed and shown.
+
+- **`Score.research`** - each technology researched *during* the run, with the first step
+  it showed researched; technologies already researched at the first step (Factorio 2.0
+  starts with `automation-science-pack`) are excluded. `research_count` is its size.
+- **`Score.research_units`** - the sum of those technologies' `research_unit_count`, so a
+  200-unit technology outweighs a 10-unit one. A raw count rewards cheap picks: after
+  step 249 the run took `military`, `military-2`, `toolbelt`, `railway`, `stone-wall`.
+  FLE records unit counts but empty ingredient lists, so this is units, not science
+  packs; Factorio 2.0's trigger technologies (`steam-power`, `electronics`) count 1.
+- **Not a replacement for the ladder.** The ladder measures what the factory can do;
+  research measures how much science it produced. "Currently researching" is not used:
+  it is an intention the agent can set at will, not an achievement.
+
+Shown by the Scorer CLI (`research: 19 technologies, 1,137 units` for this run), the
+panel's research line, and the progress line.
+

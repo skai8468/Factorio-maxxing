@@ -98,7 +98,8 @@ as a safety net (D65). The project does not promise a rocket launch ahead of res
 
 **Primary capability metric — highest milestone reached** on the §5d ladder, computed
 by the Scorer from recorded FLE state, never from the verifier. Secondary: FLE
-production score · research count · steps and spend to each milestone.
+production score · research count and research units (D79) · steps and spend to each
+milestone.
 
 **Primary human-assistance metric — interventions**, read with: interventions
 requested vs answered · characters of guidance · guidance category · human time per

@@ -65,7 +65,7 @@ def test_the_status_line_has_step_milestone_cost_and_help():
     state = HudState()
     state.feed([RUN, step(0), CALL, REQUEST, ANSWER])
     assert progress.status_line(state) == (
-        "step 1/3 · milestone 1/24 · ~$0.01 · help asked 1x"
+        "step 1/3 · milestone 1/24 · research 0 (0 units) · ~$0.01 · help asked 1x"
     )
 
 
@@ -90,7 +90,7 @@ def test_once_prints_where_the_run_is_without_replaying_every_step(tmp_path):
     write(tmp_path / "20261021T100000-a.jsonl", [RUN, step(0), step(1)])
     assert run(tmp_path, once=True) == [
         "following 20261021T100000-a.jsonl",
-        "step 2/3 · milestone 1/24 · ~$0.00",
+        "step 2/3 · milestone 1/24 · research 0 (0 units) · ~$0.00",
     ]
 
 
@@ -107,11 +107,11 @@ def test_following_prints_a_line_per_new_step_and_the_help_cycle(tmp_path):
     progress.follow(tail, lines.append, sleep=sleep, ticks=6)
     assert lines == [
         "following 20261021T100000-a.jsonl",
-        "step 1/3 · milestone 1/24 · ~$0.00",
-        "step 2/3 · milestone 1/24 · ~$0.00",
+        "step 1/3 · milestone 1/24 · research 0 (0 units) · ~$0.00",
+        "step 2/3 · milestone 1/24 · research 0 (0 units) · ~$0.00",
         "  ⚠ asking for help at step 2: stuck",
         "  answered",
-        "step 3/3 · milestone 1/24 · ~$0.00 · help asked 1x",
+        "step 3/3 · milestone 1/24 · research 0 (0 units) · ~$0.00 · help asked 1x",
         "run reached its step cap",
     ]
 

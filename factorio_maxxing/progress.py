@@ -38,7 +38,8 @@ def status_line(state: HudState) -> str:
     if score.contiguous != score.highest:
         milestone += f" (contiguous {score.contiguous})"
     cost = sum(usage.cost for usage in summarize(state.llm_calls))
-    parts = [f"step {step}", milestone, f"~${cost:.2f}"]
+    research = f"research {score.research_count} ({score.research_units:,} units)"
+    parts = [f"step {step}", milestone, research, f"~${cost:.2f}"]
     if state.help_requests:
         parts.append(f"help asked {state.help_requests}x")
     if state.error:

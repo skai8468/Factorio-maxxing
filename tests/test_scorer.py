@@ -315,3 +315,53 @@ def test_format_score_shows_the_contiguous_count():
         score_records([step(0, inventory=[{"type": "iron-ore", "quantity": "1"}])])
     )
     assert "contiguous:    1/24" in lines
+
+
+# --- Research count and units (D79) ----------------------------------------------------
+
+
+def techs(**researched):
+    """A research observation: name -> (researched, unit count)."""
+    return {
+        "technologies": {
+            name: {"researched": int(done), "research_unit_count": units}
+            for name, (done, units) in researched.items()
+        }
+    }
+
+
+def test_research_counts_only_what_the_run_researched_with_its_units():
+    start = techs(**{"automation-science-pack": (1, 1), "automation": (0, 10)})
+    later = techs(
+        **{
+            "automation-science-pack": (1, 1),
+            "automation": (1, 10),
+            "logistics-2": (1, 200),
+        }
+    )
+    score = score_records([step(0, research=start), step(5, research=later)])
+    assert score.research == {"automation": 5, "logistics-2": 5}
+    assert score.research_count == 2
+    assert score.research_units == 210
+
+
+def test_research_keeps_the_first_step_each_technology_showed():
+    a = techs(automation=(0, 10))
+    b = techs(automation=(1, 10))
+    score = score_records([step(0, research=a), step(3, research=b), step(9, research=b)])
+    assert score.research == {"automation": 3}
+
+
+def test_a_run_without_research_data_reports_none():
+    score = score_records([step(0, inventory=[{"type": "iron-ore", "quantity": "1"}])])
+    assert (score.research_count, score.research_units) == (0, 0)
+
+
+def test_format_score_shows_research():
+    later = techs(automation=(1, 10))
+    lines = format_score(
+        score_records(
+            [step(0, research=techs(automation=(0, 10))), step(1, research=later)]
+        )
+    )
+    assert "research:      1 technologies, 10 units" in lines
