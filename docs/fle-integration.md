@@ -234,6 +234,12 @@ with `human: "panel"` (the grid's human cells) it comes with a text box: type th
 guidance, press **Send**, or **Decline**. The text reaches the harness verbatim; Ctrl+C
 in the run's terminal also declines. With `human: "interactive"` the line says to answer
 in the terminal. Watchers can now click, type and move the panel - nothing else.
+
+**Following a run without the game:** `python -m factorio_maxxing.progress` tails the
+newest trajectory and prints one line per step - step against the cap, milestone (highest
+and contiguous), estimated spend, help requests, the step's error - plus a line when the
+run asks for help and when it is answered. `--once` prints where the run is and exits.
+It only reads the trajectory, so it works for a headless run, from Windows or WSL.
 Everything is drawn for watchers only; nothing changes an entity, inventory or game
 timing. **Not yet verified with a live client** - D63 is tested offline only.
 
