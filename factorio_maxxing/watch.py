@@ -637,7 +637,12 @@ def hud_lines(state: HudState) -> list[tuple[str, str]]:
         lines.append(
             (
                 f"Milestone {score.highest}/{len(ladder)}: {rung.description} "
-                f"(step {score.reached[rung.key] + 1})",
+                f"(step {score.reached[rung.key] + 1})"
+                + (
+                    f" · contiguous {score.contiguous}"
+                    if score.contiguous != score.highest
+                    else ""
+                ),
                 "milestone",
             )
         )

@@ -227,7 +227,7 @@ The operator is one person who learns across runs; these controls bound that bia
 - **`ScriptedHuman` replay** of one run's hints against another harness is a secondary
   analysis only: the goal-5 replay did not reproduce (hint 3 landed at step 29, not 65).
 
-## 5d. Milestone ladder — draft, research lead to confirm
+## 5d. Milestone ladder — v1 (D76)
 
 Each milestone is checked by the Scorer from recorded FLE state.
 
@@ -244,7 +244,22 @@ Each milestone is checked by the Scorer from recorded FLE state.
 11. Electric mining drill `WORKING`
 12. `logistics` researched
 13. Logistic science pack produced
-14. … extended toward `plastic-bar`, the deepest item on the FLE leaderboard
+14. Steel plate produced
+15. Assembler producing logistic science packs
+16. Pumpjack `WORKING`: crude oil
+17. Oil refinery `WORKING`
+18. Chemical plant `WORKING`
+19. Plastic bar produced — the deepest item on the FLE leaderboard
+20. Sulfur produced
+21. Advanced circuit produced
+22. Engine unit produced
+23. Chemical science pack produced
+24. Assembler producing chemical science packs
+
+Rungs 1-13 are the original draft; 14-24 were added when Haiku 5.5 reached 13 at step 117
+of 300 (D76). The headline is the **highest rung reached**; the Scorer reports the
+**contiguous** count beside it - the last rung with every rung below it reached - so a
+run that skips rungs (hand-made science instead of an assembler) shows it.
 
 ---
 

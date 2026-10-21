@@ -10,8 +10,10 @@ never runs inside the loop, so it cannot drive control flow.
 A milestone counts as reached at the first step whose observation satisfies it, and
 stays reached. Some milestones are cumulative - "a gear and a circuit crafted" holds once
 both have appeared at any step, not necessarily the same one - and the rest are checked
-on one observation. The headline is the highest milestone reached (section 5); the
-first step of each is kept so steps-to-milestone can be reported too.
+on one observation. The headline is the highest milestone reached (section 5); beside
+it is the contiguous count - the last rung with every rung below it reached - so a run
+that skips rungs is visible (D76). The first step of each is kept so steps-to-milestone
+can be reported too.
 
 The ladder is the research lead's draft and will change, so it is data: each milestone
 is a key, a description and a predicate, and ``LADDER_VERSION`` is stamped on every
@@ -30,7 +32,7 @@ from typing import Any
 from factorio_maxxing.rendering import _as_counts, _crafted_outputs, _technology_states
 from factorio_maxxing.trajectory import read_trajectory
 
-LADDER_VERSION = "v0-draft"
+LADDER_VERSION = "v1"
 """Bump whenever a milestone is added, removed, reordered or redefined."""
 
 
@@ -169,13 +171,25 @@ def _drill_feeds_furnace(obs: dict[str, Any], _: History) -> bool:
     return False
 
 
-def _assembler_makes_red_science(obs: dict[str, Any], _: History) -> bool:
-    # Unverified live: no recorded run has an assembler yet. FLE types the field as a
-    # Recipe, so the name is matched anywhere in its recorded form.
-    return any(
-        "automation-science-pack" in str(e.get("recipe", ""))
-        for e in working(obs, *ASSEMBLERS)
-    )
+def _assembler_makes(item: str) -> Check:
+    """A WORKING assembler whose recipe names ``item``. FLE types the field as a Recipe,
+    so the name is matched anywhere in its recorded form. Unverified live: no recorded
+    run has an assembler on a science recipe yet."""
+
+    def check(obs: dict[str, Any], _: History) -> bool:
+        return any(item in str(e.get("recipe", "")) for e in working(obs, *ASSEMBLERS))
+
+    return check
+
+
+def _made(item: str) -> Check:
+    """``item`` has appeared - in inventory, flow outputs, crafts or harvests - at any
+    step so far."""
+    return lambda o, h: item in h.items
+
+
+def _running(*names: str) -> Check:
+    return lambda o, h: bool(working(o, *names))
 
 
 LADDER: tuple[Milestone, ...] = (
@@ -215,7 +229,7 @@ LADDER: tuple[Milestone, ...] = (
     Milestone(
         "red-science-assembler",
         "Assembler producing automation science packs",
-        _assembler_makes_red_science,
+        _assembler_makes("automation-science-pack"),
     ),
     Milestone(
         "electric-drill-working",
@@ -230,8 +244,34 @@ LADDER: tuple[Milestone, ...] = (
         "Logistic science pack produced",
         lambda o, h: "logistic-science-pack" in h.items,
     ),
+    Milestone("steel", "Steel plate produced", _made("steel-plate")),
+    Milestone(
+        "green-science-assembler",
+        "Assembler producing logistic science packs",
+        _assembler_makes("logistic-science-pack"),
+    ),
+    Milestone("pumpjack-working", "Pumpjack WORKING: crude oil", _running("pumpjack")),
+    Milestone("refinery-working", "Oil refinery WORKING", _running("oil-refinery")),
+    Milestone(
+        "chemical-plant-working", "Chemical plant WORKING", _running("chemical-plant")
+    ),
+    Milestone("plastic", "Plastic bar produced", _made("plastic-bar")),
+    Milestone("sulfur", "Sulfur produced", _made("sulfur")),
+    Milestone("advanced-circuit", "Advanced circuit produced", _made("advanced-circuit")),
+    Milestone("engine-unit", "Engine unit produced", _made("engine-unit")),
+    Milestone(
+        "blue-science", "Chemical science pack produced", _made("chemical-science-pack")
+    ),
+    Milestone(
+        "blue-science-assembler",
+        "Assembler producing chemical science packs",
+        _assembler_makes("chemical-science-pack"),
+    ),
 )
-"""build-plan.md section 5d, milestones 1-13. Index 1 is the first rung; 0 means none."""
+"""build-plan.md section 5d, milestones 1-24 (ladder v1, D76). Index 1 is the first
+rung; 0 means none. Rungs 14-24 run from steel through oil to automated blue science,
+past ``plastic-bar`` - the deepest item on FLE's leaderboard - so a frontier model does
+not reach the top within the 300-step cap."""
 
 
 # --- Scoring a run -------------------------------------------------------------------
@@ -245,6 +285,9 @@ class Score:
     """Milestone key -> first step (as recorded) at which it held."""
     highest: int
     """1-based index of the highest milestone reached; 0 if none."""
+    contiguous: int = 0
+    """How many rungs from the bottom were all reached: the last rung with every rung
+    below it reached (D76). Equal to ``highest`` unless the run skipped a rung."""
     ladder_version: str = LADDER_VERSION
 
     @property
@@ -283,11 +326,17 @@ class ScoreTracker:
         highest = max(
             (i for i, m in enumerate(self.ladder, 1) if m.key in self.reached), default=0
         )
+        contiguous = 0
+        for milestone in self.ladder:
+            if milestone.key not in self.reached:
+                break
+            contiguous += 1
         return Score(
             run_id=self.run_id,
             steps=self.steps,
             reached=dict(self.reached),
             highest=highest,
+            contiguous=contiguous,
         )
 
 
@@ -311,6 +360,7 @@ def format_score(score: Score, ladder: Sequence[Milestone] = LADDER) -> list[str
         f"run:           {score.run_id}",
         f"steps:         {score.steps}",
         f"highest:       {score.highest}/{len(ladder)} - {top}",
+        f"contiguous:    {score.contiguous}/{len(ladder)}",
         f"ladder:        {score.ladder_version}",
     ]
     for index, milestone in enumerate(ladder, 1):

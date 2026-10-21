@@ -4,6 +4,8 @@ import enum
 import json
 import re
 
+import pytest
+
 from factorio_maxxing.scorer import (
     LADDER,
     LADDER_VERSION,
@@ -222,3 +224,94 @@ def test_format_score_lists_every_rung():
     lines = format_score(score_records([]))
     rungs = [line for line in lines if re.match(r"\s+\d+\. ", line)]
     assert len(rungs) == len(LADDER)
+
+
+# --- Ladder v1: rungs 14-24 and the contiguous count (D76) ------------------------------
+
+
+def test_the_ladder_runs_to_automated_blue_science():
+    assert LADDER_VERSION == "v1"
+    assert len(LADDER) == 24
+    assert [m.key for m in LADDER[13:]] == [
+        "steel",
+        "green-science-assembler",
+        "pumpjack-working",
+        "refinery-working",
+        "chemical-plant-working",
+        "plastic",
+        "sulfur",
+        "advanced-circuit",
+        "engine-unit",
+        "blue-science",
+        "blue-science-assembler",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("key", "item"),
+    [
+        ("steel", "steel-plate"),
+        ("plastic", "plastic-bar"),
+        ("sulfur", "sulfur"),
+        ("advanced-circuit", "advanced-circuit"),
+        ("engine-unit", "engine-unit"),
+        ("blue-science", "chemical-science-pack"),
+    ],
+)
+def test_item_rungs_are_reached_when_the_item_appears(key, item):
+    score = score_records([step(0, inventory=[{"type": item, "quantity": "1"}])])
+    assert key in score.reached
+
+
+@pytest.mark.parametrize(
+    ("key", "entity"),
+    [
+        ("pumpjack-working", "pumpjack"),
+        ("refinery-working", "oil-refinery"),
+        ("chemical-plant-working", "chemical-plant"),
+    ],
+)
+def test_oil_rungs_need_the_machine_working_not_just_built(key, entity):
+    working_one = {"name": entity, "status": "EntityStatus.WORKING"}
+    idle_one = {"name": entity, "status": "EntityStatus.NO_INPUT_FLUID"}
+    assert key in score_records([step(0, entities=[working_one])]).reached
+    assert key not in score_records([step(0, entities=[idle_one])]).reached
+
+
+@pytest.mark.parametrize(
+    ("key", "pack"),
+    [
+        ("green-science-assembler", "logistic-science-pack"),
+        ("blue-science-assembler", "chemical-science-pack"),
+    ],
+)
+def test_science_assembler_rungs_read_the_recipe(key, pack):
+    assembler = {
+        "name": "assembling-machine-2",
+        "status": "EntityStatus.WORKING",
+        "recipe": f"name='{pack}' ingredients=[...]",
+    }
+    assert key in score_records([step(0, entities=[assembler])]).reached
+    red = {**assembler, "recipe": "name='automation-science-pack'"}
+    assert key not in score_records([step(0, entities=[red])]).reached
+
+
+def test_contiguous_stops_at_the_first_missing_rung():
+    """D76: the live cell-5 shape - rungs 10 and 11 skipped on the way to 13."""
+    tracker_steps = [
+        step(0, inventory=[{"type": "iron-ore", "quantity": "1"}]),
+        step(1, inventory=[{"type": "iron-plate", "quantity": "1"}]),
+    ]
+    score = score_records(tracker_steps)
+    assert (score.highest, score.contiguous) == (2, 2)
+    skipped = score_records(
+        [step(0, inventory=[{"type": "logistic-science-pack", "quantity": "1"}])]
+    )
+    assert (skipped.highest, skipped.contiguous) == (rank("green-science"), 0)
+
+
+def test_format_score_shows_the_contiguous_count():
+    lines = format_score(
+        score_records([step(0, inventory=[{"type": "iron-ore", "quantity": "1"}])])
+    )
+    assert "contiguous:    1/24" in lines

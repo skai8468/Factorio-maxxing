@@ -269,7 +269,7 @@ def test_hud_shows_the_example_lines():
     assert text[0].startswith("Step 14 · claude-haiku-4-5 · ~$")
     assert text[0].endswith("help asked 1×")
     assert text[1].startswith("Goal: Unlock steam power")
-    assert text[2] == "Milestone 0/13"
+    assert text[2] == "Milestone 0/24"
     assert text[3] == "▶ Place boiler next to the offshore pump"
     assert "No boiler in inventory" in text[4] and text[4].startswith("✗ ")
     assert text[5] == "? Verifier: not done - boiler idle"
@@ -383,7 +383,7 @@ def test_the_research_line_lists_what_is_done_and_in_progress():
 def test_the_milestone_line_follows_the_scorer():
     state = panel()
     milestone = line_starting(state, "Milestone")
-    assert milestone == "Milestone 5/13: Copper plate (step 14)"
+    assert milestone == "Milestone 5/24: Copper plate (step 14) · contiguous 0"
 
 
 def test_long_lists_are_cut_with_a_count_of_the_rest():
@@ -587,7 +587,7 @@ def test_a_panel_request_asks_for_the_answer_in_the_panel():
 def test_the_title_keeps_step_and_milestone_for_a_hidden_panel():
     state = HudState()
     state.feed([{**RUN}, STEP])
-    assert watch.hud_title(state) == "Agent · step 14/300 · milestone 0/13"
+    assert watch.hud_title(state) == "Agent · step 14/300 · milestone 0/24"
 
 
 def test_the_panel_buttons_are_installed_with_the_camera(tmp_path):

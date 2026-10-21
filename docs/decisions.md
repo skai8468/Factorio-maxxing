@@ -2660,3 +2660,34 @@ the backstop (D67) will produce such false alarms routinely; a dedicated code (e
    model call. No per-run cost, and no labelling model to hold fixed across cells. The
    research lead verifies every row (D74).
 
+---
+
+## D76 - Milestone ladder v1: 24 rungs to automated blue science, with a contiguous count
+
+**Decision (research lead, 2026-10-21).** The 13-rung draft ladder (D62) was too short:
+in the first grid run on the patched FLE (cell 5, Haiku 5.5, `20261021T172150-ba5dcf0a`)
+Haiku reached rung 13 - logistic science pack - at step 117 of 300, with steel processing
+and automation 2 already researched; Opus would cap out sooner, and gap closure computed
+on a capped score understates the frontier. Both options chosen were the recommended
+ones.
+
+1. **Rungs 14-24**, past `plastic-bar` (the deepest item on FLE's leaderboard) to
+   automated blue science: steel plate · assembler making logistic science · pumpjack
+   WORKING · oil refinery WORKING · chemical plant WORKING · plastic bar · sulfur ·
+   advanced circuit · engine unit · chemical science pack · assembler making chemical
+   science. *Produced* rungs use the Scorer's cumulative item set (inventory, flow
+   outputs, crafts, harvests - as rungs 2, 5, 13); *machine* rungs need the entity
+   `WORKING`, not just built; *assembler* rungs read the recipe, as rung 10 does
+   (`_assembler_makes`, now shared). The science-assembler and oil rungs are unverified
+   live - no run has reached them.
+2. **Headline: highest rung reached, with the contiguous count beside it.** `Score`
+   gains `contiguous` - the last rung with every rung below it reached; the CLI prints
+   both, and the panel shows "contiguous N" when the two differ. The live run reads
+   13/24 highest, 9/24 contiguous: it made red science by hand (rung 10) and never ran
+   an electric drill (rung 11).
+
+`LADDER_VERSION` is `v1`, so v0-draft scores are never compared with v1 ones; any
+trajectory can be rescored. Annotation rows stamp the ladder version and compute
+`unstuck` from it, so unstuck values change with the ladder (more rungs, more chances to
+be unstuck).
+
