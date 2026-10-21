@@ -2567,3 +2567,42 @@ like the camera. **Not yet seen live.**
 run waits until Ctrl+C. As with the camera, the click handler is console-registered, so
 a client joining after it is installed would fail to load (D63) - join first, as before.
 
+---
+
+## D73 - FLE drops every lab while a hyphenated technology is researched; patched
+
+**Found** in the first grid run (cell 5, Haiku 5.5, `20261021T162318-3e77267c`), from the
+research lead's report that the agent "built a lot of labs but there's no energy" and the
+panel listed none. **Patch approved by the research lead (2026-10-21)**; the run was
+stopped at step 137 (~$0.43).
+
+**The bug (FLE 0.4.8 @ e2a829d).** FLE's Lua `dump` writes every value with `tostring`, so
+`serialize.lua` pre-quotes string fields (`name`, `status`, ...). A lab's `research` -
+the force's current research - was not quoted. A one-word name (`automation`,
+`logistics`) still parses; a hyphenated one is read by FLE's Python Lua parser (slpp) as a
+subtraction, and the whole lab entry comes back as a list. `get_entities` skips lists
+without a word, so from the moment the agent set research to `logistic-science-pack`
+(step 45) every lab vanished: from `get_entities`, from `get_entity` (`'list' object has
+no attribute 'items'`), from `place_entity`'s read-back - which then reported "Could not
+place lab" for a lab it had placed - and from the recorded observation, hence from the
+panel and the Scorer. The agent crafted and placed lab after lab; 28 stood unpowered on
+the map, none visible to it. Most of the tech tree is hyphenated (`steam-power`,
+`fast-inserter`, `logistic-science-pack`...), so every model in every cell would have hit
+it around milestones 9-10.
+
+**Diagnosed read-only** against the live game: 28 labs on the agent's force; FLE's own
+`get_entities` client, fed the live response, returned 0 of them; the same response with
+`research` quoted returned all 28. Scanning every entity type in the response, `research`
+was the only unquoted value.
+
+**The fix**, edit 3 of `scripts/patch_fle.sh` (D61's mechanism): `serialized.research =
+"\"" .. name .. "\""`, as FLE writes statuses. Idempotent, keeps a `.orig`, and fails if
+the line is still bare. FLE loads its Lua when a run starts, so it applies from the next
+run. Worth reporting upstream.
+
+**The stopped run.** 137 steps, highest milestone 9 (automation researched, step 33).
+After step 45 it measures this bug, not the agent; it is not grid data (the standard
+harness is not frozen either). Its stuck events - all six from the 20-step backstop, at
+steps 19, 39, 59, 79, 99 and 119 - are codable: the four from step 59 on are E08
+Environment / infra (attribution: environment), with E06 Repetition loop secondary.
+

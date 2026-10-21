@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Apply the harness's two edits to an installed FLE (D61). Run after every install:
+# Apply the harness's three edits to an installed FLE (D61). Run after every install:
 #
 #     scripts/patch_fle.sh ~/venvs/fle
 #
@@ -12,9 +12,15 @@
 #    colon (D37). Upstream fixed the shared tool.py in 0.4.8 (#398), but not these five:
 #    "No lab in inventory. Current inventory: coal=5" still reaches the agent as
 #    "Could not place lab at (x, y), coal=5".
+# 3. Quote a lab's current research in FLE's entity serializer (D73). FLE's ``dump``
+#    writes every value with tostring, so string fields must be pre-quoted, and
+#    ``research`` was not: once a hyphenated technology (``logistic-science-pack``,
+#    ``steam-power``...) is being researched, FLE's parser reads the bare name as a
+#    subtraction, turns each lab into a list, and silently drops every lab from
+#    get_entities, get_entity, place_entity's read-back and the observation.
 #
 # Idempotent: an already-patched file is left alone, and the first run keeps a .orig
-# copy of each file it changes. Exits non-zero if either edit is incomplete afterwards.
+# copy of each file it changes. Exits non-zero if any edit is incomplete afterwards.
 #
 # fle/eval/inspect/sandbox/Dockerfile also names 2.0.73; nothing in the harness builds
 # it, so it is left alone.
@@ -98,3 +104,35 @@ if grep -rn --include='*.py' 'split(":")\[-1\]' "$FLE_DIR/env/tools"; then
     exit 1
 fi
 echo "ok: no tool truncates its error messages"
+
+# --- 3. Lab research quoting (D73) ------------------------------------------------------
+"$VENV/bin/python" - "$FLE_DIR" <<'PY'
+import os
+import shutil
+import sys
+
+path = os.path.join(sys.argv[1], "env", "mods", "serialize.lua")
+BARE = "serialized.research = storage.agent_characters[1].force.current_research.name"
+QUOTED = (
+    'serialized.research = "\\"" .. '
+    'storage.agent_characters[1].force.current_research.name .. "\\""'
+)
+if not os.path.exists(path):
+    sys.exit(f"missing: {path} - FLE's mod layout has changed; update this script")
+text = open(path, encoding="utf-8").read()
+if QUOTED in text:
+    print("already quoted: env/mods/serialize.lua")
+elif text.count(BARE) != 1:
+    sys.exit("the lab research line in serialize.lua has changed; update this script")
+else:
+    if not os.path.exists(path + ".orig"):
+        shutil.copyfile(path, path + ".orig")
+    open(path, "w", encoding="utf-8").write(text.replace(BARE, QUOTED))
+    print("quoted lab research: env/mods/serialize.lua")
+PY
+
+if grep -n 'serialized.research = storage' "$FLE_DIR/env/mods/serialize.lua"; then
+    echo "a lab's research is still serialized unquoted (above)" >&2
+    exit 1
+fi
+echo "ok: a lab's research is serialized quoted"

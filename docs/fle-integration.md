@@ -76,8 +76,9 @@ Compose v5.5.1, containerd v2.3.4, service enabled under systemd.
 
 **Current procedure (0.4.8, D61).** FLE is installed through this package's `fle` extra,
 which pins commit `e2a829d` - there is no 0.4.8 on PyPI and no tag. Then
-`scripts/patch_fle.sh` applies the harness's two site-packages edits: the Factorio 2.0.77
-image pin (below) and the error-truncation fix for five tools (D37). Inside WSL:
+`scripts/patch_fle.sh` applies the harness's three site-packages edits: the Factorio
+2.0.77 image pin (below), the error-truncation fix for five tools (D37), and quoting a
+lab's current research in `env/mods/serialize.lua` so labs stay visible (D73). Inside WSL:
 
 ```bash
 uv venv --python 3.13 ~/venvs/fle
@@ -86,7 +87,7 @@ VIRTUAL_ENV=~/venvs/fle uv pip install -e ".[fle,api]"
 bash scripts/patch_fle.sh ~/venvs/fle
 ```
 
-The script is idempotent and exits non-zero if either edit is incomplete; re-run it after
+The script is idempotent and exits non-zero if any edit is incomplete; re-run it after
 **any** install that touches FLE. Item 2 below (`psycopg2`) still applies; item 1 does
 not.
 
