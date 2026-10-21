@@ -2636,7 +2636,27 @@ backstop fired with nothing wrong, which v0 has no code for. **Flagged for codeb
 the backstop (D67) will produce such false alarms routinely; a dedicated code (e.g.
 "no error - backstop") would keep them out of E09.
 
-**Open, for the research lead:** which model pre-codes during the grid. Drafting by hand
-in a Claude Code session, as here, costs nothing per run; an automated pre-coder would
-need a fixed model, the same for every cell, so labels cannot vary with the run's model.
+**Who pre-codes:** decided in D75 - Claude, by hand, in a working session.
+
+---
+
+## D75 - Error code E10 "No error (backstop)"; grid stuck events are drafted by hand in a session
+
+**Decision (research lead, 2026-10-21).**
+
+1. **E10 - No error (backstop)** joins codebook v0 as a dated amendment rather than
+   waiting for the v1 revision: the step backstop (D67) asks for help every 20 quiet
+   steps whether or not the agent is stuck, and those requests would otherwise swell
+   E09 Other. *Include* when the stuck reason is the backstop's and the ~5 steps before
+   show normal progress; *exclude* any identifiable error, which is coded instead. The
+   validator allows E10 only on a backstop request and with no secondary code. E10
+   counts measure the detector's false alarms - attribution *Harness (detector)* - and
+   are what a better stuck detector in the specialized harness should reduce.
+   Workbook: new row in the Error codebook, drop-downs extended, the Summary's error
+   table and cross-tab rebuilt for ten codes (formulas regenerated, not shifted).
+   The cell-5 pilot's steps 19 and 39 are re-drafted as E10.
+2. **Pre-coding during the grid is done by Claude, by hand, in a working session** -
+   reading each stuck event's trajectory window as for the pilot - not by an automated
+   model call. No per-run cost, and no labelling model to hold fixed across cells. The
+   research lead verifies every row (D74).
 

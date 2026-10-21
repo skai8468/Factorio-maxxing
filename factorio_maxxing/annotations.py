@@ -55,6 +55,7 @@ ERROR_CODES = {
     "E07": "Verifier false DONE",
     "E08": "Environment / infra",
     "E09": "Other",
+    "E10": "No error (backstop)",
 }
 GUIDANCE_CODES = {
     "G1": "KNOWLEDGE",
@@ -63,7 +64,12 @@ GUIDANCE_CODES = {
     "G4": "CORRECTION",
     "G5": "OTHER",
 }
-"""Codebook v0, as in the workbook's codebook sheets; a test keeps the two in step."""
+"""Codebook v0, as in the workbook's codebook sheets; a test keeps the two in step.
+E10 was added on 2026-10-21 (D75)."""
+
+BACKSTOP_REASON = "steps without a request for help"
+"""The step backstop's stuck reason (``stuck.StepBackstopDetector``); E10 applies only
+to requests it raised."""
 
 UNSTUCK_VALUES = ("yes", "no", "n/a")
 
@@ -251,6 +257,11 @@ def _row_problems(row: Mapping[str, Any]) -> list[str]:
     )
     if row["error_category"] == "E09" and not _text(row["error_note"]):
         problems.append("E09 (Other) needs an error note describing it")
+    if row["error_category"] == "E10":
+        if BACKSTOP_REASON not in str(row["stuck_reason"] or ""):
+            problems.append("E10 (No error) applies only to a backstop request")
+        if row["error_secondary"] is not None:
+            problems.append("E10 (No error) takes no secondary code")
 
     if row["guidance_text"] is None:
         for key in ("guidance_category", "guidance_secondary", "guidance_mentions_api"):

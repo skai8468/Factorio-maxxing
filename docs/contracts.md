@@ -309,12 +309,13 @@ One JSON object per stuck event in `annotations/<run_id>.jsonl`, keys in this or
   `(step, step + unstuck_k]`, else `n/a` if the run's last step is before `step +
   unstuck_k`, else `no` - stamped with `ladder_version`.
 - *From the annotator:* `grid_cell` (`1`-`8`, `5'`-`8'` or `pilot`), `harness`
-  (`standard` / `specialized`), `human`, the codes (`E01`-`E09`, `G1`-`G5`, codebook v0),
+  (`standard` / `specialized`), `human`, the codes (`E01`-`E10`, `G1`-`G5`, codebook v0),
   notes, `annotator` and `verified_by` - null for a draft, the verifier's name once
   checked (D74); `unverified(rows)` lists the steps still awaiting it. With no guidance
   text the guidance fields are null; with it,
   a primary guidance code and `guidance_mentions_api` are required. A secondary code
-  may not repeat its primary; `E09` needs an `error_note`, `G5` a `notes`.
+  may not repeat its primary; `E09` needs an `error_note`, `G5` a `notes`; `E10` only on a
+  backstop request, with no secondary (D75).
 
 `validate(rows, run_facts(trajectory_records), complete=True) -> list[str]` returns the
 problems, empty when valid; `complete` requires exactly one row per intervention record.

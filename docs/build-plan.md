@@ -182,7 +182,7 @@ guidance_category · unstuck (yes/no, within k steps) · codebook_version
 
 **Error codebook v0:** API misuse · spatial / placement · recipe / tech knowledge ·
 planning / ordering · observation misread · repetition loop · verifier false DONE ·
-environment / infra · other.
+environment / infra · other · no error (backstop) - E10, added 2026-10-21 (D75).
 
 **Guidance codebook v0:** `KNOWLEDGE` · `DIAGNOSIS` · `PLANNING` · `CORRECTION` ·
 other.

@@ -305,7 +305,7 @@ def test_completeness_can_be_waived_while_annotating():
 @pytest.mark.parametrize(
     ("changes", "message"),
     [
-        ({"error_category": "E10"}, "unknown error code 'E10'"),
+        ({"error_category": "E99"}, "unknown error code 'E99'"),
         ({"error_category": None}, "a primary error code is required"),
         ({"error_secondary": "E05"}, "secondary error code repeats the primary"),
         ({"guidance_category": "G9"}, "unknown guidance code 'G9'"),
@@ -646,3 +646,49 @@ def test_export_carries_the_verifier_from_the_sheet(tmp_path):
     first, second = read_annotations(written[0])
     assert first["verified_by"] == "SK"
     assert second["verified_by"] is None
+
+
+# --- E10, no error (D75) --------------------------------------------------------------
+
+BACKSTOP_EVENTS = (
+    (9, "10 consecutive non-DONE verifications", HINT),
+    (20, "20 steps without a request for help", None),
+)
+
+
+def test_e10_codes_a_backstop_request_with_nothing_wrong():
+    facts = run_facts(trajectory(events=BACKSTOP_EVENTS))
+    rows = [
+        row(unstuck="yes"),
+        declined(
+            error_category="E10", stuck_reason="20 steps without a request for help"
+        ),
+    ]
+    assert validate(rows, facts) == []
+
+
+def test_e10_is_refused_on_a_request_the_backstop_did_not_raise():
+    problems = validate([row(unstuck="yes"), declined(error_category="E10")], FACTS)
+    assert f"{RUN} step 20: E10 (No error) applies only to a backstop request" in problems
+
+
+def test_e10_takes_no_secondary_code():
+    facts = run_facts(trajectory(events=BACKSTOP_EVENTS))
+    rows = [
+        row(unstuck="yes"),
+        declined(
+            error_category="E10",
+            error_secondary="E06",
+            stuck_reason="20 steps without a request for help",
+        ),
+    ]
+    assert f"{RUN} step 20: E10 (No error) takes no secondary code" in validate(
+        rows, facts
+    )
+
+
+def test_the_backstop_reason_is_the_detectors():
+    from factorio_maxxing.stuck import StepBackstopDetector
+
+    _, reason = StepBackstopDetector(20).is_stuck([("x", "o")] * 20, [], [], [])
+    assert annotations.BACKSTOP_REASON in reason
