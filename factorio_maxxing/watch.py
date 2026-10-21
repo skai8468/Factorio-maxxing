@@ -38,6 +38,7 @@ from pathlib import Path
 from string import Template
 from typing import Any
 
+from factorio_maxxing.help_channel import HelpChannel, Request
 from factorio_maxxing.scorer import ScoreTracker
 
 DEFAULT_INTERVAL = 0.1
@@ -278,6 +279,68 @@ rcon.print("installed")
 - Every drawing passes ``players``: watchers see it, the world does not change."""
 
 
+PANEL_ACTIONS = ("gui_click", "gui_text_changed", "gui_confirmed", "gui_location_changed")
+"""The only input actions watchers are given back (D72): clicking, typing into and
+moving the harness panel. Building, mining, walking and opening machines stay blocked,
+so the human still provides text and nothing else."""
+
+PANEL_LUA = _one_line(
+    f"""
+harness_panel = harness_panel or {{}}
+harness_panel.min = harness_panel.min or {{}}
+local g = game.permissions.get_group("{WATCHER_GROUP}")
+if g then
+  for _, name in pairs({{{", ".join(f'"{a}"' for a in PANEL_ACTIONS)}}}) do
+    local a = defines.input_action[name]
+    if a then g.set_allows_action(a, true) end
+  end
+end
+function harness_panel_click(e)
+  local el = e.element
+  if not (el and el.valid) then return end
+  local p = game.get_player(e.player_index)
+  if el.name == "harness_hud_toggle" then
+    local m = not harness_panel.min[p.index]
+    harness_panel.min[p.index] = m
+    local f = p.gui.screen.harness_hud
+    if f and f.harness_body then f.harness_body.visible = not m end
+    el.caption = m and "Show" or "Hide"
+  elseif el.name == "harness_help_send" or el.name == "harness_help_decline" then
+    local id = el.tags and el.tags.request
+    if not id or harness_panel.sent == id then return end
+    local h = el.parent and el.parent.parent
+    local box = h and h.harness_help_text
+    local text = nil
+    if el.name == "harness_help_send" and box then text = box.text end
+    harness_panel.answer = {{id = id, text = text}}
+    harness_panel.sent = id
+    if box then box.read_only = true end
+    el.parent.visible = false
+  end
+end
+script.on_event(defines.events.on_gui_click, function(e)
+  local ok, err = pcall(harness_panel_click, e)
+  if not ok then harness_watch_error = tostring(err) end
+end)
+rcon.print("panel")
+"""
+)
+"""The panel's buttons, installed with the camera once a client has joined (D72).
+
+Hide/Show collapses the panel to its title bar; Send and Decline answer the open help
+request. An answer is held in ``harness_panel.answer`` until the watcher takes it with
+``TAKE_ANSWER_LUA``. FLE registers no GUI event, so ``on_gui_click`` is free; the body
+runs under ``pcall`` like the camera's, and state lives in plain Lua globals (D43)."""
+
+TAKE_ANSWER_LUA = _one_line(
+    """
+local a = harness_panel and harness_panel.answer
+if a then harness_panel.answer = nil rcon.print(helpers.table_to_json(a))
+else rcon.print("") end
+"""
+)
+
+
 def camera_lua(settings: CameraSettings) -> str:
     return _one_line(
         CAMERA_LUA.substitute(
@@ -389,6 +452,8 @@ class HudState:
     llm_calls: list[dict[str, Any]] = field(default_factory=list)
     help_requests: int = 0
     human: tuple[int, str | None] | None = None
+    waiting: tuple[int, str] | None = None
+    """(step, reason) of a help request not yet answered (D72)."""
     verdict: tuple[bool, str] | None = None
     game_seconds: float | None = None
     inventory: dict[str, float] = field(default_factory=dict)
@@ -419,9 +484,15 @@ class HudState:
                 self.llm_calls.append(record)
                 if record.get("role") == "policy":
                     self.model = str(record.get("model") or self.model)
+            elif kind == "help_request":
+                self.waiting = (
+                    int(record.get("step") or 0),
+                    str(record.get("stuck_reason") or ""),
+                )
             elif kind == "intervention":
                 self.help_requests += 1
                 self.human = (int(record.get("step") or 0), record.get("text"))
+                self.waiting = None
             elif kind == "verification":
                 self.verdict = (bool(record.get("done")), str(record.get("reason") or ""))
 
@@ -632,26 +703,121 @@ def _lua_string(text: str) -> str:
     return f"[{eq}[{text}]{eq}]"
 
 
-def hud_lua(lines: list[tuple[str, str]]) -> str:
-    """Rebuild the watchers' HUD panel. Each line's text is collapsed to one line."""
+def hud_title(state: HudState) -> str:
+    """The title bar, which stays visible when the panel is hidden: step and milestone."""
+    step = "-" if state.step is None else str(state.step + 1)
+    if state.max_steps:
+        step += f"/{state.max_steps}"
+    score = state.scorer.score()
+    return f"Agent · step {step} · milestone {score.highest}/{len(state.scorer.ladder)}"
+
+
+def hud_help(state: HudState, request: Request | None) -> str | None:
+    """The help line: shown, even on a hidden panel, while the run waits for a human."""
+    if request is not None:
+        at = f" (step {state.waiting[0] + 1})" if state.waiting else ""
+        return (
+            f"⚠ The harness is asking for help{at}: {request.reason}. "
+            "Type your guidance below and press Send, or Decline."
+        )
+    if state.waiting is not None:
+        step, reason = state.waiting
+        return (
+            f"⚠ The harness is asking for help (step {step + 1}): {reason}. "
+            "Answer in the run's terminal."
+        )
+    return None
+
+
+def hud_lua(
+    lines: list[tuple[str, str]],
+    title: str = "Factorio agent",
+    help_text: str | None = None,
+    request_id: str | None = None,
+) -> str:
+    """Rebuild the watchers' panel (D63, D71, D72).
+
+    A draggable title bar with a Hide/Show button; the body of ``lines``, each collapsed
+    to one wrapped label; and, while help is requested, a help section that stays visible
+    when the body is hidden - with a text box, Send and Decline when ``request_id`` names
+    a panel request. The rebuild keeps where the watcher dragged the panel, whether they
+    hid it, and anything half-typed for the same request.
+    """
     entries = []
     for text, colour in lines:
         r, g, b = COLOURS.get(colour, COLOURS["plain"])
         entries.append(
             f"{{{_lua_string(' '.join(text.split()))}, {{r={r}, g={g}, b={b}}}}}"
         )
-    return (
-        f"local L = {{{', '.join(entries)}}} "
-        "for _, p in pairs(game.connected_players) do "
-        "local f = p.gui.screen.harness_hud if f then f.destroy() end "
-        'f = p.gui.screen.add{type = "frame", name = "harness_hud", '
-        'direction = "vertical", caption = "Factorio agent"} '
-        "f.location = {x = 12, y = 80} "
-        "for _, l in ipairs(L) do "
-        'local w = f.add{type = "label", caption = l[1]} '
-        "w.style.single_line = false w.style.maximal_width = 680 "
-        "w.style.font_color = l[2] end end "
-        'rcon.print("hud")'
+    hr, hg, hb = COLOURS["human"]
+    help_lua = _lua_string(" ".join(help_text.split())) if help_text else "nil"
+    request_lua = _lua_string(request_id) if request_id else "nil"
+    return _one_line(
+        f"""
+local L = {{{", ".join(entries)}}}
+local TITLE = {_lua_string(title)}
+local HELP = {help_lua}
+local REQ = {request_lua}
+for _, p in pairs(game.connected_players) do
+  local old = p.gui.screen.harness_hud
+  local loc, typed = nil, nil
+  if old then
+    loc = old.location
+    local oh = old.harness_help
+    local ob = oh and oh.harness_help_text
+    if ob and REQ and ob.tags.request == REQ then typed = ob.text end
+    old.destroy()
+  end
+  local min = harness_panel and harness_panel.min and harness_panel.min[p.index]
+  local sent = harness_panel and REQ and harness_panel.sent == REQ
+  local f = p.gui.screen.add{{type = "frame", name = "harness_hud",
+    direction = "vertical"}}
+  f.location = loc or {{x = 12, y = 80}}
+  local bar = f.add{{type = "flow", name = "harness_bar", direction = "horizontal"}}
+  bar.drag_target = f
+  local t = bar.add{{type = "label", caption = TITLE, style = "frame_title"}}
+  t.ignored_by_interaction = true
+  local d = bar.add{{type = "empty-widget", style = "draggable_space_header"}}
+  d.style.horizontally_stretchable = true
+  d.style.height = 24
+  d.style.minimal_width = 24
+  d.drag_target = f
+  bar.add{{type = "button", name = "harness_hud_toggle",
+    caption = min and "Show" or "Hide"}}
+  if HELP then
+    local h = f.add{{type = "flow", name = "harness_help", direction = "vertical"}}
+    local w = h.add{{type = "label", caption = HELP}}
+    w.style.single_line = false
+    w.style.maximal_width = 680
+    w.style.font_color = {{r={hr}, g={hg}, b={hb}}}
+    if REQ then
+      if sent then
+        h.add{{type = "label", caption = "Sent - waiting for the harness to take it."}}
+      else
+        local box = h.add{{type = "text-box", name = "harness_help_text",
+          text = typed or "", tags = {{request = REQ}}}}
+        box.word_wrap = true
+        box.style.width = 680
+        box.style.height = 110
+        local b = h.add{{type = "flow", direction = "horizontal"}}
+        b.add{{type = "button", name = "harness_help_send", caption = "Send",
+          tags = {{request = REQ}}}}
+        b.add{{type = "button", name = "harness_help_decline", caption = "Decline",
+          tags = {{request = REQ}}}}
+      end
+    end
+  end
+  local body = f.add{{type = "flow", name = "harness_body", direction = "vertical"}}
+  body.visible = not min
+  for _, l in ipairs(L) do
+    local w = body.add{{type = "label", caption = l[1]}}
+    w.style.single_line = false
+    w.style.maximal_width = 680
+    w.style.font_color = l[2]
+  end
+end
+rcon.print("hud")
+"""
     )
 
 
@@ -728,6 +894,8 @@ def watch(
     camera = camera or CameraSettings()
     hud = HudState()
     hud_pending = False
+    channel = HelpChannel(tail.directory / "help") if tail is not None else None
+    request: Request | None = None
     last = None
     count = 0
     while ticks is None or count < ticks:
@@ -736,8 +904,12 @@ def watch(
             connected = status in ("following", "no agent")
             if connected and not camera_running:
                 send(f"/sc {camera_lua(camera)}")
-                logging.info("camera installed")
+                send(f"/sc {PANEL_LUA}")
+                logging.info("camera and panel installed")
                 hud_pending = True
+            if channel is not None and connected:
+                request, changed = relay_help(send, channel, request)
+                hud_pending = hud_pending or changed
             if tail is not None:
                 switched, records = tail.poll()
                 if switched:
@@ -747,7 +919,13 @@ def watch(
                     hud.feed(records)
                     hud_pending = True
                 if connected and hud_pending and hud.step is not None:
-                    send(f"/sc {hud_lua(hud_lines(hud))}")
+                    lua = hud_lua(
+                        hud_lines(hud),
+                        hud_title(hud),
+                        hud_help(hud, request),
+                        request.id if request else None,
+                    )
+                    send(f"/sc {lua}")
                     hud_pending = False
         except Exception as error:  # noqa: BLE001 - watching must not stop on a blip
             status = f"error: {error}"
@@ -757,6 +935,38 @@ def watch(
         count += 1
         if ticks is None or count < ticks:
             sleep(interval)
+
+
+def relay_help(
+    send: Send, channel: HelpChannel, shown: Request | None
+) -> tuple[Request | None, bool]:
+    """Carry a panel help request into the game and its answer back (D72).
+
+    Returns the open request and whether the panel needs redrawing. The answer is
+    relayed exactly as typed; the harness decides what a blank one means.
+    """
+    request = channel.pending()
+    changed = (request.id if request else None) != (shown.id if shown else None)
+    if changed and request is not None:
+        logging.info("help requested: %s - answer in the panel", request.reason)
+    if request is None:
+        return None, changed
+    reply = str(send(f"/sc {TAKE_ANSWER_LUA}") or "").strip()
+    if not reply:
+        return request, changed
+    try:
+        answer = json.loads(reply)
+    except ValueError:
+        return request, changed
+    if isinstance(answer, dict) and answer.get("id") == request.id:
+        text = answer.get("text")
+        text = text if isinstance(text, str) else None
+        channel.answer(request.id, text)
+        logging.info(
+            "answer relayed (%s)", "declined" if text is None else f"{len(text)} chars"
+        )
+        return None, True
+    return request, changed
 
 
 def connect() -> Send:

@@ -917,11 +917,11 @@ def test_grid_cells_differ_only_in_model_and_human():
     ("cell", "model", "human"),
     [
         ("1", "claude-opus-5-5", "none"),
-        ("2", "claude-opus-5-5", "interactive"),
+        ("2", "claude-opus-5-5", "panel"),
         ("5", "claude-haiku-5-5", "none"),
-        ("6", "claude-haiku-5-5", "interactive"),
+        ("6", "claude-haiku-5-5", "panel"),
         ("5'", "open-router-openai/gpt-6-luna", "none"),
-        ("6'", "open-router-openai/gpt-6-luna", "interactive"),
+        ("6'", "open-router-openai/gpt-6-luna", "panel"),
     ],
 )
 def test_each_cell_has_its_model_and_human(cell, model, human):
@@ -1010,3 +1010,15 @@ def test_the_code_version_names_this_checkout():
     version = code_version()
     assert version["commit"] is None or len(version["commit"]) == 40
     assert version["dirty"] in (True, False, None)
+
+
+def test_the_panel_backend_hands_over_beside_the_trajectories(tmp_path):
+    from factorio_maxxing.human import PanelHuman
+
+    human = build_human(Config(human="panel", trajectory_dir=str(tmp_path)), None)
+    assert isinstance(human, PanelHuman)
+    assert human.channel.directory == tmp_path / "help"
+
+
+def test_the_panel_flag_is_accepted():
+    assert resolve_config(parse("--goal", "g", "--human", "panel")).human == "panel"

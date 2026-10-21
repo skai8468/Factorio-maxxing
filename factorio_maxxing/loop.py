@@ -25,6 +25,7 @@ environment ends it - and a guided run lasts as long as its unguided twin.
 
 import logging
 import re
+import time
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -316,9 +317,15 @@ def _ask_and_record(
     M1 comparison. Interventions are counted as records whose text is not null.
 
     ``next_intervention_index`` is read before asking and ``last_hint`` after, per D21.
+
+    A ``help_request`` record is written before asking, so a reader can see the run is
+    waiting, and the time the human took is recorded with the answer (D72).
     """
     index = getattr(human, "next_intervention_index", interventions)
+    recorder.record_help_request(step, why)
+    started = time.monotonic()
     text = human.ask(goal, rendered, why)
+    answer_seconds = round(time.monotonic() - started, 2)
     hint = getattr(human, "last_hint", None)
 
     answered = text is not None
@@ -328,5 +335,6 @@ def _ask_and_record(
         text=text,
         intervention_index=index if answered else None,
         original_step=hint.original_step if answered and hint is not None else None,
+        answer_seconds=answer_seconds,
     )
     return text

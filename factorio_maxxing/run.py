@@ -35,7 +35,13 @@ from factorio_maxxing.envs import (
 from factorio_maxxing.goal import Goal, open_ended_goal
 from factorio_maxxing.grid import BUILT_HARNESSES, GRID_CELL, HARNESSES
 from factorio_maxxing.history_report import HistoryReporter
-from factorio_maxxing.human import Hint, InteractiveHuman, NoHuman, ScriptedHuman
+from factorio_maxxing.human import (
+    Hint,
+    InteractiveHuman,
+    NoHuman,
+    PanelHuman,
+    ScriptedHuman,
+)
 from factorio_maxxing.llm import APIClient, LLMClient, StubLLMClient
 from factorio_maxxing.loop import run_goal
 from factorio_maxxing.pricing import SpendMeter, format_summary, has_price, summarize
@@ -262,7 +268,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--policy-model")
     parser.add_argument("--verifier-model")
-    parser.add_argument("--human", choices=["none", "interactive", "scripted"])
+    parser.add_argument("--human", choices=["none", "interactive", "panel", "scripted"])
     parser.add_argument("--hints", help="JSON hint list, required by --human scripted")
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--verification-interval", type=int)
@@ -515,11 +521,19 @@ def build_spend_meter(config: Config) -> SpendMeter:
     return SpendMeter(config.max_spend_usd)
 
 
+def help_directory(config: Config) -> Path:
+    """Where a panel request and its answer are handed over (D72). The watcher looks
+    in ``help/`` beside the trajectories it follows, which is this by default."""
+    return Path(config.trajectory_dir) / "help"
+
+
 def build_human(config: Config, hints_path: str | None):
     if config.human == "none":
         return NoHuman()
     if config.human == "interactive":
         return InteractiveHuman()
+    if config.human == "panel":
+        return PanelHuman(help_directory(config))
     if config.human == "scripted":
         if not hints_path:
             raise ConfigError("--human scripted requires --hints")

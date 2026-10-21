@@ -105,6 +105,15 @@ class TrajectoryRecorder:
         """Record a verdict as control-flow evidence. Skipped steps record nothing."""
         self._write("verification", step, done=result.done, reason=result.reason)
 
+    def record_help_request(self, step: int, stuck_reason: str) -> None:
+        """Record that help was requested, before anyone answers (D72).
+
+        The matching ``intervention`` record follows once the human answers or
+        declines; until then this is how a reader - the watcher's panel - knows the run
+        is waiting, and a run that dies while waiting still shows it was asking.
+        """
+        self._write("help_request", step, stuck_reason=stuck_reason)
+
     def record_intervention(
         self,
         step: int,
@@ -112,11 +121,13 @@ class TrajectoryRecorder:
         text: str,
         intervention_index: int,
         original_step: int | None = None,
+        answer_seconds: float | None = None,
     ) -> None:
         """Record one intervention.
 
         ``text`` is written verbatim and is the source of truth. Any later
         classification is an additional field; it never replaces this text.
+        ``answer_seconds`` is the wall-clock time the human took (build-plan 5c, D72).
         """
         self._write(
             "intervention",
@@ -125,6 +136,7 @@ class TrajectoryRecorder:
             text=text,
             intervention_index=intervention_index,
             original_step=original_step,
+            answer_seconds=answer_seconds,
         )
 
     def record_report(self, step: int, text: str) -> None:

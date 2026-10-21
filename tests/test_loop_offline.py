@@ -351,3 +351,54 @@ def test_the_spend_total_is_never_recorded(tmp_path):
     text = (tmp_path / "run.jsonl").read_text(encoding="utf-8")
     assert "$" not in text
     assert not [r for r in records if "cost" in r or "spent_usd" in r]
+
+
+class SlowHuman:
+    """Answers after a fixed delay on a fake clock, to time the answer."""
+
+    def __init__(self, clock, seconds, text="Fuel the drill."):
+        self.clock, self.seconds, self.text = clock, seconds, text
+
+    def ask(self, goal, observation, reason):
+        self.clock[0] += self.seconds
+        return self.text
+
+
+def test_a_help_request_is_recorded_before_its_answer(tmp_path):
+    """D72: the request record comes first, so a reader can see the run waiting."""
+    _, records = run(
+        tmp_path / "run.jsonl",
+        verifier=StubVerifier([NOT_DONE]),
+        human=ScriptedHuman(["Fuel the drill."]),
+        detector=ConsecutiveNonDoneDetector(2),
+    )
+    kinds = [r["type"] for r in records if r["type"] in ("help_request", "intervention")]
+    assert kinds == ["help_request", "intervention", "help_request", "intervention"]
+    request = next(r for r in records if r["type"] == "help_request")
+    assert request["step"] == 1
+    assert request["stuck_reason"] == "2 consecutive non-DONE verifications"
+
+
+def test_the_time_to_answer_is_recorded(tmp_path, monkeypatch):
+    """build-plan 5c: log the time taken to answer each request."""
+    clock = [100.0]
+    monkeypatch.setattr("factorio_maxxing.loop.time.monotonic", lambda: clock[0])
+    _, records = run(
+        tmp_path / "run.jsonl",
+        verifier=StubVerifier([NOT_DONE]),
+        human=SlowHuman(clock, 41.5),
+        detector=ConsecutiveNonDoneDetector(2),
+    )
+    answered = [r for r in records if r["type"] == "intervention"]
+    assert [r["answer_seconds"] for r in answered] == [41.5, 41.5]
+
+
+def test_an_unanswered_request_still_records_its_time(tmp_path):
+    _, records = run(
+        tmp_path / "run.jsonl",
+        verifier=StubVerifier([NOT_DONE]),
+        detector=ConsecutiveNonDoneDetector(2),
+    )
+    requests = [r for r in records if r["type"] == "intervention"]
+    assert all(isinstance(r["answer_seconds"], float) for r in requests)
+    assert all(r["answer_seconds"] >= 0 for r in requests)

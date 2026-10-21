@@ -129,7 +129,9 @@ class HumanProtocol(Protocol):
 ```
 
 Returns guidance text, or `None` for no assistance. Implementations: `NoHuman`,
-`InteractiveHuman`, `ScriptedHuman`.
+`InteractiveHuman` (the terminal), `PanelHuman` (the watcher's game panel, through a
+`help_channel.HelpChannel` file handoff in `<trajectory_dir>/help/`; D72) and
+`ScriptedHuman`. Config `human`: `none`, `interactive`, `panel`, `scripted`.
 
 `ScriptedHuman` matches by **sequence order**: the Nth stuck event receives the Nth
 recorded hint. On exhaustion it degrades to `NoHuman` behaviour and logs the
@@ -183,7 +185,7 @@ continues (D66).
 
 ## `trajectory.py`
 
-JSONL, append-friendly. Five record types. Every record carries `type`, `run_id` and
+JSONL, append-friendly. Six record types. Every record carries `type`, `run_id` and
 `step`; `type` is the only discriminator.
 
 ```json
@@ -204,11 +206,18 @@ JSONL, append-friendly. Five record types. Every record carries `type`, `run_id`
 
 {"type":"verification","run_id":"...","step":0,"done":false,"reason":"..."}
 
+{"type":"help_request","run_id":"...","step":3,"stuck_reason":"..."}
+
 {"type":"intervention","run_id":"...","step":3,"stuck_reason":"...",
- "text":"...","intervention_index":0,"original_step":3}
+ "text":"...","intervention_index":0,"original_step":3,"answer_seconds":41.5}
 
 {"type":"report","run_id":"...","step":7,"text":"..."}
 ```
+
+A `help_request` record (D72) is written when help is requested, before the human
+answers; its `intervention` record follows with the answer (or `null`) and
+`answer_seconds`, the wall-clock time the human took (build-plan 5c). Trajectories from
+before D72 have neither.
 
 The `run` record (D70) is written once, first, by `run.py`: the goal, the full
 resolved `Config` (no secrets - keys never enter it) and the code's git commit with

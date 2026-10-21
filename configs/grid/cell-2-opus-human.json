@@ -1,7 +1,7 @@
 {
   "policy_model": "claude-opus-5-5",
   "verifier_model": "claude-opus-5-5",
-  "human": "interactive",
+  "human": "panel",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 3,
   "non_done_threshold": null,

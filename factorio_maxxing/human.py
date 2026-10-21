@@ -7,19 +7,23 @@ environment, or sees an Action - `ask` takes strings and returns a string. Retur
 is passed back unaltered: intervention text is recorded verbatim and is the source of
 truth.
 
-Three backends behind one interface: NoHuman is the autonomous baseline, and the delta
-between it and InteractiveHuman over one goal set is the M1 result. ScriptedHuman is a
+Four backends behind one interface: NoHuman is the autonomous baseline, and the delta
+between it and InteractiveHuman over one goal set is the M1 result. PanelHuman asks
+through the game panel instead of the terminal (D72). ScriptedHuman is a
 methodological safeguard, replaying one intervention set against two harness versions so
 an improvement can be attributed to the harness rather than to a better hint.
 """
 
 import logging
 import os
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from factorio_maxxing.goal import Goal
+from factorio_maxxing.help_channel import HelpChannel
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +163,50 @@ class InteractiveHuman:
             lines.append(line)
 
         return "\n".join(lines) if lines else None
+
+
+class PanelHuman:
+    """Ask through the watcher's game panel rather than the terminal (D72).
+
+    Posts the request to a ``HelpChannel`` directory and waits until the watcher
+    writes the answer typed into the panel. The text comes back verbatim; a blank
+    answer or the panel's Decline button declines, as a blank line does at the
+    terminal. Ctrl+C in the run's terminal also declines, so a run whose watcher is not
+    running can still move on. The game is paused between steps, so nothing happens in
+    the world while it waits.
+    """
+
+    def __init__(
+        self,
+        directory: Path | str,
+        *,
+        poll_seconds: float = 0.2,
+        output_fn: Callable[[str], None] = print,
+        sleep: Callable[[float], None] = time.sleep,
+    ):
+        self.channel = HelpChannel(directory)
+        self.channel.close()  # nothing from an earlier run can answer this one
+        self._poll = poll_seconds
+        self._output = output_fn
+        self._sleep = sleep
+        self.call_count = 0
+
+    def ask(self, goal: Goal, observation: str, reason: str) -> str | None:
+        self.call_count += 1
+        request = self.channel.post(goal.description, reason, time.time())
+        self._output("")
+        self._output("=== The harness is asking for help - answer in the game panel ===")
+        self._output(f"WHY: {reason}")
+        self._output("(Ctrl+C here declines.)")
+        try:
+            while True:
+                answered, text = self.channel.take_answer(request)
+                if answered:
+                    return text if text and text.strip() else None
+                self._sleep(self._poll)
+        except KeyboardInterrupt:
+            self.channel.close()
+            return None
 
 
 class ScriptedHuman:

@@ -169,6 +169,7 @@ def test_intervention_record_fields(recorder):
         text="Fuel the drill before checking its status.",
         intervention_index=0,
         original_step=7,
+        answer_seconds=41.5,
     )
     assert read_trajectory(recorder.path)[0] == {
         "type": "intervention",
@@ -178,6 +179,7 @@ def test_intervention_record_fields(recorder):
         "text": "Fuel the drill before checking its status.",
         "intervention_index": 0,
         "original_step": 7,
+        "answer_seconds": 41.5,
     }
 
 
@@ -317,3 +319,16 @@ def test_llm_call_records_the_key_fingerprint_when_there_is_one(recorder):
         0, "policy", policy_response(key_id="ANTHROPIC_API_KEY:3f9a1c2e")
     )
     assert read_trajectory(recorder.path)[0]["key_id"] == "ANTHROPIC_API_KEY:3f9a1c2e"
+
+
+def test_a_help_request_is_recorded_before_any_answer(recorder):
+    """D72: a reader can see the run is waiting before the human has answered."""
+    recorder.record_help_request(3, "20 steps without a request for help")
+    assert read_trajectory(recorder.path) == [
+        {
+            "type": "help_request",
+            "run_id": "run-1",
+            "step": 3,
+            "stuck_reason": "20 steps without a request for help",
+        }
+    ]

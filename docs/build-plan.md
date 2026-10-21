@@ -217,7 +217,8 @@ The operator is one person who learns across runs; these controls bound that bia
   and what it may not: code.
 - **Alternate which model is guided first** within each seed, so operator learning is
   spread across both rows.
-- **Log the time taken to answer each request.**
+- **Log the time taken to answer each request** - recorded as `answer_seconds` on
+  every intervention record (D72).
 - **`ScriptedHuman` replay** of one run's hints against another harness is a secondary
   analysis only: the goal-5 replay did not reproduce (hint 3 landed at step 29, not 65).
 

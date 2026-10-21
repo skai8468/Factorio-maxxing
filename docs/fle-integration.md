@@ -225,6 +225,14 @@ latest guidance - since D71 also the highest milestone, inventory, this step's
 production, the factory's entities with what ails them, and research. Flags: `--zoom`,
 `--no-cues`, `--no-hud`, `--trajectory-dir` (default: the repository's `trajectories/`,
 wherever the watcher is started - D71).
+
+**Since D72 the panel is also where you answer.** Drag it by its title bar; **Hide**
+collapses it to the title (step and milestone stay visible), **Show** brings it back.
+When the harness asks for help, a help line appears even on a hidden panel. In a run
+with `human: "panel"` (the grid's human cells) it comes with a text box: type the
+guidance, press **Send**, or **Decline**. The text reaches the harness verbatim; Ctrl+C
+in the run's terminal also declines. With `human: "interactive"` the line says to answer
+in the terminal. Watchers can now click, type and move the panel - nothing else.
 Everything is drawn for watchers only; nothing changes an entity, inventory or game
 timing. **Not yet verified with a live client** - D63 is tested offline only.
 

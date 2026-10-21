@@ -2524,3 +2524,46 @@ for watchers, so nothing about a run changes.
 Lua per refresh): milestone 9 (automation researched at step 33), 9 entity types, 4
 technologies.
 
+---
+
+## D72 - Help requests are visible while waiting, answer time is logged, and the panel can answer
+
+**Requested by the research lead (2026-10-21)**: fix the two gaps found while watching
+the first grid run, answer in the panel rather than the terminal, and be able to hide
+the panel.
+
+1. **A `help_request` record** is written before the human is asked; the `intervention`
+   record follows. Until it does, the panel shows "⚠ The harness is asking for help",
+   and a run that dies while waiting still shows it was asking. Before this, a request
+   appeared only once answered (D63's stated limit).
+2. **`answer_seconds`** on every intervention record: wall-clock seconds from asking to
+   the answer (or the decline), measured in the loop around `human.ask`. This is the
+   "time to answer" build-plan 5c requires for the human-effort tables; it was not
+   recorded before.
+3. **`human: "panel"` - answering in the game.** `PanelHuman` posts the request to
+   `<trajectory_dir>/help/request.json` and waits; the watcher shows it in the panel
+   with a text box, **Send** and **Decline**, and writes what was typed, verbatim, to
+   `answer.json` (atomic writes; an answer counts only if its id matches the open
+   request). Blank or Decline is no guidance, as a blank line is at the terminal; Ctrl+C
+   in the run's terminal also declines, so a run whose watcher died can move on. The
+   grid's human cells (2, 6, 6') now use `panel`. **Invariants:** the harness never
+   touches the game - the watcher, which already held the only extra connection, relays
+   text both ways; the human still provides text only. To type and click, watchers'
+   permission group regains exactly `gui_click`, `gui_text_changed`, `gui_confirmed` and
+   `gui_location_changed`; building, mining, walking and opening machines stay blocked.
+4. **The panel can be hidden and moved.** A draggable title bar holds a Hide/Show
+   button; hidden, it shows only the title - step and milestone - plus any help request.
+   Each refresh keeps the panel's position, its hidden state, and text half-typed for
+   the same request.
+
+**How it was tested.** The panel's Lua runs offline in a real Lua interpreter (`lupa`,
+a dev dependency) against a mock of the Factorio GUI API: the permission change,
+rebuild-preserves-typing, Hide/Show, Send, Decline, double-click, and the whole relay
+from posted request to the harness taking the answer (`tests/test_watch_lua.py`).
+FLE registers no GUI event, so `on_gui_click` is free; the handler runs under `pcall`
+like the camera. **Not yet seen live.**
+
+**Limits.** The watcher must be running for a panel answer to arrive; without it the
+run waits until Ctrl+C. As with the camera, the click handler is console-registered, so
+a client joining after it is installed would fail to load (D63) - join first, as before.
+

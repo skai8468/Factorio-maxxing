@@ -549,3 +549,54 @@ def test_main_stops_cleanly_on_interrupt(monkeypatch):
 )
 def test_icons_only_for_real_items_and_fluids(name, expected):
     assert watch.icon(name) == expected
+
+
+# --- Waiting for help (D72) ------------------------------------------------------
+
+REQUEST_RECORD = {
+    "type": "help_request",
+    "run_id": "r",
+    "step": 19,
+    "stuck_reason": "20 steps without a request for help",
+}
+
+
+def test_the_panel_knows_the_run_is_waiting_until_the_answer_arrives():
+    state = HudState()
+    state.feed([STEP, REQUEST_RECORD])
+    assert state.waiting == (19, "20 steps without a request for help")
+    assert watch.hud_help(state, None) == (
+        "⚠ The harness is asking for help (step 20): 20 steps without a request for "
+        "help. Answer in the run's terminal."
+    )
+    state.feed([{**HELP, "step": 19}])
+    assert state.waiting is None
+    assert watch.hud_help(state, None) is None
+
+
+def test_a_panel_request_asks_for_the_answer_in_the_panel():
+    from factorio_maxxing.help_channel import Request
+
+    state = HudState()
+    state.feed([STEP, REQUEST_RECORD])
+    text = watch.hud_help(state, Request("id", "g", "stuck", 0.0))
+    assert text.startswith("⚠ The harness is asking for help (step 20): stuck.")
+    assert "press Send" in text
+
+
+def test_the_title_keeps_step_and_milestone_for_a_hidden_panel():
+    state = HudState()
+    state.feed([{**RUN}, STEP])
+    assert watch.hud_title(state) == "Agent · step 14/300 · milestone 0/13"
+
+
+def test_the_panel_buttons_are_installed_with_the_camera(tmp_path):
+    rcon = FakeRCON(["following 0"])
+    watch.watch(rcon, 0.01, tail=TrajectoryTail(tmp_path), sleep=quiet, ticks=1)
+    assert any("on_gui_click" in command for command in rcon.sent)
+
+
+def test_no_answer_is_polled_while_no_request_is_open(tmp_path):
+    rcon = FakeRCON(["following 1", "following 1", "following 1"])
+    watch.watch(rcon, 0.01, tail=TrajectoryTail(tmp_path), sleep=quiet, ticks=3)
+    assert not any("harness_panel.answer" in command for command in rcon.sent)
