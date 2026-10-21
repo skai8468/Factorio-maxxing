@@ -692,3 +692,15 @@ def test_the_backstop_reason_is_the_detectors():
 
     _, reason = StepBackstopDetector(20).is_stuck([("x", "o")] * 20, [], [], [])
     assert annotations.BACKSTOP_REASON in reason
+
+
+def test_saving_restores_the_code_dropdowns(tmp_path):
+    """D74: Excel stores cross-sheet drop-downs as extensions openpyxl drops on load."""
+    openpyxl = pytest.importorskip("openpyxl")
+    book = openpyxl.Workbook()
+    book.active.title = annotations.SHEET
+    path = tmp_path / "book.xlsx"
+    annotations.save_workbook(book, path)
+    saved = openpyxl.load_workbook(path)[annotations.SHEET]
+    found = {str(dv.sqref): dv.formula1 for dv in saved.data_validations.dataValidation}
+    assert found == annotations.CODE_DROPDOWNS

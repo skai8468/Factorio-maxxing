@@ -98,3 +98,26 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
   score stays a secondary metric (build-plan 5), and if so as the sum of per-step score.
 - **Status:** explained.
 
+## B7 - A trajectory record was overwritten by the next one
+
+- **Found:** 2026-10-21, cell-5 run `20261021T193258-2cd7aa8c` (D78), when scoring it.
+- **Component:** harness (`trajectory.TrajectoryRecorder`), on WSL writing to `/mnt/c`.
+- **Symptom:** the Scorer could not read the trajectory - two lines were not JSON.
+- **Cause:** the step-227 record (~88 KB) broke at byte 65,512 - one 64 KiB 9p message
+  less its 24-byte header - and the next record (its 320-byte model call plus newline)
+  sat on top of bytes 65,512-65,832 of it: an *overwrite*, not an insertion. The recorder
+  opened the file in append mode; under WSL the trajectory lives on the Windows drive
+  (9p), where a large O_APPEND write goes out in pieces and the next append was placed
+  at a stale end-of-file. Once in 260 records over 64 KiB in that run; no other recorded
+  trajectory (43 checked) is affected.
+- **Data effect:** 321 bytes of step 227 lost - the tail of the `processing-unit`
+  technology entry and the whole `production-science-pack` entry of its research list.
+  **Repaired byte-exactly:** both technologies are unresearched and identical at steps
+  226 and 228, the text rebuilt from step 228 is exactly 321 bytes, and step 227's
+  research list then equals its neighbours'. The damaged file is kept as
+  `trajectories/20261021T193258-2cd7aa8c.jsonl.orig`. No scored field was affected.
+- **Fix:** the recorder opens the file without O_APPEND and positions at its end once,
+  so every write lands at an explicit offset; an existing file is still extended, never
+  truncated. Tests cover a >64 KiB record followed by a small one.
+- **Status:** fixed (from the next run on).
+

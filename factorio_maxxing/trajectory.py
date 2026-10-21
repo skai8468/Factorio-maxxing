@@ -14,6 +14,7 @@ callers the harness grows (D22).
 """
 
 import json
+import os
 import uuid
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -29,13 +30,23 @@ class TrajectoryRecorder:
 
     Each record is flushed as it is written, so a run that dies mid-goal keeps
     everything recorded up to that point.
+
+    The file is **not** opened in append mode (B7). Under WSL, trajectories live on the
+    Windows drive (9p), where an O_APPEND write larger than one 64 KiB 9p message went
+    out in pieces and the next record was placed at a stale end-of-file - on top of the
+    large record's second piece. Opened plainly and positioned at the end once, every
+    write lands at an explicit offset; an existing file is still extended, never
+    truncated.
     """
 
     def __init__(self, path: Path | str, run_id: str | None = None):
         self.path = Path(path)
         self.run_id = run_id or uuid.uuid4().hex
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._file = self.path.open("a", encoding="utf-8", newline="\n")
+        flags = os.O_WRONLY | os.O_CREAT | getattr(os, "O_BINARY", 0)
+        fd = os.open(self.path, flags, 0o644)
+        os.lseek(fd, 0, os.SEEK_END)
+        self._file = open(fd, "w", encoding="utf-8", newline="\n")
 
     def record_run(
         self, goal: Goal, config: Mapping[str, Any], code: Mapping[str, Any]

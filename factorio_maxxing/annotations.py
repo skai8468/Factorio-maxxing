@@ -459,6 +459,31 @@ def unverified(rows: Iterable[Mapping[str, Any]]) -> list[int]:
     return [row["step"] for row in rows if not _text(row.get("verified_by"))]
 
 
+CODE_DROPDOWNS = {
+    "I2:J501": "'Error codebook'!$A$2:$A$11",
+    "L2:M501": "'Guidance codebook'!$A$2:$A$6",
+}
+"""The Annotations sheet's code drop-downs. Excel re-saves cross-sheet lists in its x14
+extension format, which openpyxl drops on load; ``save_workbook`` puts them back."""
+
+
+def save_workbook(workbook: Any, path: Path | str = WORKBOOK) -> None:
+    """Save an openpyxl workbook, restoring the code drop-downs first (D74).
+
+    For Claude's drafting edits; openpyxl is a dev dependency (D69), imported here only.
+    """
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    sheet = workbook[SHEET]
+    present = {str(dv.sqref) for dv in sheet.data_validations.dataValidation}
+    for cells, formula in CODE_DROPDOWNS.items():
+        if cells not in present:
+            dropdown = DataValidation(type="list", formula1=formula, allow_blank=True)
+            dropdown.add(cells)
+            sheet.add_data_validation(dropdown)
+    workbook.save(path)
+
+
 def write_annotations(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8", newline="\n") as handle:

@@ -332,3 +332,36 @@ def test_a_help_request_is_recorded_before_any_answer(recorder):
             "stuck_reason": "20 steps without a request for help",
         }
     ]
+
+
+def test_records_larger_than_a_9p_message_round_trip(tmp_path):
+    """B7: a record over 64 KiB, followed at once by a small one, reads back intact."""
+    big = {"entities": [{"name": f"e{i}", "position": "x=1 y=2"} for i in range(6000)]}
+    with TrajectoryRecorder(tmp_path / "run.jsonl", run_id="r") as recorder:
+        recorder.record_step(0, GOAL, "x = 1", big, 0.0)
+        recorder.record_report(0, "small")
+        recorder.record_step(1, GOAL, "x = 2", big, 0.0)
+    assert (tmp_path / "run.jsonl").stat().st_size > 2 * 65536
+    records = read_trajectory(tmp_path / "run.jsonl")
+    assert [(r["type"], r["step"]) for r in records] == [
+        ("step", 0),
+        ("report", 0),
+        ("step", 1),
+    ]
+    assert records[2]["observation"] == big
+
+
+def test_the_recorder_extends_an_existing_file_without_truncating(tmp_path):
+    path = tmp_path / "run.jsonl"
+    with TrajectoryRecorder(path, run_id="r") as recorder:
+        recorder.record_report(0, "first")
+    with TrajectoryRecorder(path, run_id="r") as recorder:
+        recorder.record_report(1, "second")
+    assert [r["text"] for r in read_trajectory(path)] == ["first", "second"]
+    assert b"\r" not in path.read_bytes()
+
+
+def test_the_recorder_does_not_open_in_append_mode(tmp_path):
+    """B7: O_APPEND is what let a small record land on a large one over 9p."""
+    with TrajectoryRecorder(tmp_path / "run.jsonl", run_id="r") as recorder:
+        assert "a" not in recorder._file.mode
