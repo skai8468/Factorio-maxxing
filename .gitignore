@@ -9,6 +9,8 @@ venv/
 # Run artifacts - trajectories are data, not source.
 # Committed fixtures live in tests/fixtures/ and are whitelisted below.
 trajectories/
+# Screen recordings of runs - large media, not source.
+recordings/
 .fle/
 
 # Secrets
