@@ -221,7 +221,10 @@ alt-mode on. Every 6 ticks it turns inventory changes into flying text
 labels ones it picked up; jumps over 3 tiles leave a fading trail. Tailing the run's
 trajectory, it keeps a watcher-only panel showing step, model, spend, help requests,
 goal, the policy's stated intent, last error, the verifier's verdict, and the human's
-latest guidance. Flags: `--zoom`, `--no-cues`, `--no-hud`, `--trajectory-dir`.
+latest guidance - since D71 also the highest milestone, inventory, this step's
+production, the factory's entities with what ails them, and research. Flags: `--zoom`,
+`--no-cues`, `--no-hud`, `--trajectory-dir` (default: the repository's `trajectories/`,
+wherever the watcher is started - D71).
 Everything is drawn for watchers only; nothing changes an entity, inventory or game
 timing. **Not yet verified with a live client** - D63 is tested offline only.
 

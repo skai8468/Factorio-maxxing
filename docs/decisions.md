@@ -2495,3 +2495,32 @@ checked run by run: a grid run should name the frozen commit and `dirty: false`.
 **Run a cell:** `python -m factorio_maxxing.run --config configs/grid/cell-5-haiku.json`
 (live cluster running; no `--goal`).
 
+---
+
+## D71 - The watch panel becomes a readable control panel, and finds the trajectory
+
+**Requested by the research lead (2026-10-21)**, while watching the first grid run (cell 5,
+`20261021T162318-3e77267c`). Watcher-side only: `watch.py` reads the trajectory and draws
+for watchers, so nothing about a run changes.
+
+- **The panel never appeared** with the documented commands: the watcher is started from
+  `~/fle-work`, so its default `--trajectory-dir trajectories` pointed at
+  `~/fle-work/trajectories`, while `run.py` writes into the repository. The default is now
+  the repository's `trajectories/`, resolved from `watch.py`'s own location.
+- **Readable text.** Every field was cut at 60 characters. The goal is now shown whole;
+  intent, error and verdict are cut at 240 (the labels wrap, so this bounds height, not
+  width); human guidance keeps its 320. The panel is 680 px wide.
+- **Control panel**, from the latest step's recorded observation: step against the cap
+  (from the `run` record, D70) and game time in the header; the highest milestone and
+  the step it first held (an incremental `scorer.ScoreTracker`, which `score_records` now
+  uses too - the Scorer stays passive, the watcher is not control flow); inventory,
+  largest first; this step's production as made and used (FLE flows); the factory as
+  working/total per entity, with problems in words (no fuel, output full, unpowered...);
+  research done and in progress. Items and fluids show as Factorio rich-text icons;
+  FLE's pseudo-names (`pipe-group`, `science`) are written out. Each list shows 16
+  entries, then "+N more".
+
+**Live check.** Rendered from the live cell-5 trajectory at step 39 (2.3k characters of
+Lua per refresh): milestone 9 (automation researched at step 33), 9 entity types, 4
+technologies.
+

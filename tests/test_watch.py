@@ -11,6 +11,7 @@ import logging
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -253,18 +254,27 @@ HELP = {
 VERDICT = {"type": "verification", "step": 13, "done": False, "reason": "boiler idle"}
 
 
+def text_of(state):
+    return [line for line, _ in hud_lines(state)]
+
+
+def line_starting(state, prefix):
+    return next(line for line in text_of(state) if line.startswith(prefix))
+
+
 def test_hud_shows_the_example_lines():
     state = HudState()
     state.feed([HELP, STEP, CALL, VERDICT])
-    text = [line for line, _ in hud_lines(state)]
+    text = text_of(state)
     assert text[0].startswith("Step 14 · claude-haiku-4-5 · ~$")
     assert text[0].endswith("help asked 1×")
     assert text[1].startswith("Goal: Unlock steam power")
-    assert text[2] == "▶ Place boiler next to the offshore pump"
-    assert "No boiler in inventory" in text[3] and text[3].startswith("✗ ")
-    assert text[4] == "? Verifier: not done - boiler idle"
+    assert text[2] == "Milestone 0/13"
+    assert text[3] == "▶ Place boiler next to the offshore pump"
+    assert "No boiler in inventory" in text[4] and text[4].startswith("✗ ")
+    assert text[5] == "? Verifier: not done - boiler idle"
     assert (
-        text[5] == 'Human (step 9): craft the "offshore pump", boiler]] and pipes first'
+        text[6] == 'Human (step 9): craft the "offshore pump", boiler]] and pipes first'
     )
 
 
@@ -273,19 +283,131 @@ def test_hud_shows_a_declined_request_and_a_clean_step():
     state.feed(
         [STEP, {**HELP, "text": None}, {**STEP, "step": 14, "execution_errors": []}]
     )
-    text = [line for line, _ in hud_lines(state)]
+    text = text_of(state)
     assert not any(line.startswith("✗") for line in text)
-    assert text[-1] == "Human (step 9): (no guidance)"
+    assert "Human (step 9): (no guidance)" in text
 
 
-def test_hud_cuts_long_fields_and_keeps_human_text_verbatim_up_to_its_limit():
+def test_hud_shows_the_whole_goal_and_cuts_only_long_free_text():
     long = "word " * 200
     state = HudState()
-    state.feed([{**STEP, "goal": long}, {**HELP, "text": long}])
-    goal = next(line for line, _ in hud_lines(state) if line.startswith("Goal:"))
-    human = next(line for line, _ in hud_lines(state) if line.startswith("Human"))
-    assert goal.endswith("…") and len(goal) <= len("Goal: ") + watch.HUD_WIDTH
+    state.feed([{**STEP, "goal": long, "policy": "# " + long}, {**HELP, "text": long}])
+    goal = line_starting(state, "Goal:")
+    intent = line_starting(state, "▶")
+    human = line_starting(state, "Human")
+    assert goal == "Goal: " + " ".join(long.split())
+    assert intent.endswith("…") and len(intent) <= len("▶ ") + watch.HUD_WIDTH
     assert human.endswith("…") and human.startswith("Human (step 9): word word")
+
+
+OBSERVATION = {
+    "inventory": [
+        {"quantity": "57", "type": "iron-plate"},
+        {"quantity": "22", "type": "coal"},
+        {"quantity": "5", "type": "copper-plate"},
+    ],
+    "flows": {
+        "input": [{"type": "coal", "rate": 4}, {"type": "water", "rate": 35.49}],
+        "output": [{"type": "steam", "rate": 355}, {"type": "iron-plate", "rate": 2.5}],
+    },
+    "entities": [
+        {"name": "burner-mining-drill", "status": "EntityStatus.WORKING"},
+        {"name": "burner-mining-drill", "status": "EntityStatus.WORKING"},
+        {"name": "burner-mining-drill", "status": "EntityStatus.NO_FUEL"},
+        {"name": "stone-furnace", "status": "EntityStatus.NO_INGREDIENTS"},
+        {"name": "pipe-group", "status": "EntityStatus.FULL_OUTPUT"},
+    ],
+    "research": {
+        "technologies": [
+            {"name": "automation", "researched": 0},
+            {"name": "steam-power", "researched": 1},
+            {"name": "electronics", "researched": 1},
+        ],
+        "current_research": "None",
+    },
+    "game_info": {"tick": 30797, "time": 513.28, "speed": 10},
+}
+RUN = {"type": "run", "run_id": "r", "step": None, "goal": "Progress", "max_steps": 300}
+
+
+def panel(observation=OBSERVATION):
+    state = HudState()
+    state.feed([RUN, {**STEP, "observation": observation}, CALL])
+    return state
+
+
+def after(state, heading):
+    text = text_of(state)
+    return text[text.index(heading) + 1]
+
+
+def test_the_header_counts_against_the_step_cap_and_shows_game_time():
+    header = text_of(panel())[0]
+    assert header.startswith("Step 14/300 · claude-haiku-4-5 · ~$")
+    assert "game 8:33" in header
+
+
+def test_the_panel_lists_the_inventory_largest_first_with_icons():
+    assert after(panel(), "Inventory") == (
+        "[item=iron-plate] 57   [item=coal] 22   [item=copper-plate] 5"
+    )
+
+
+def test_the_panel_shows_this_steps_production_with_fluid_icons():
+    state = panel()
+    text = text_of(state)
+    made = text[text.index("Production this step") + 1]
+    used = text[text.index("Production this step") + 2]
+    assert made == "Made: [fluid=steam] +355   [item=iron-plate] +2.5"
+    assert used == "Used: [fluid=water] -35   [item=coal] -4"
+
+
+def test_the_factory_line_counts_working_entities_and_names_problems():
+    assert after(panel(), "Factory") == (
+        "[item=burner-mining-drill] 2/3 working (1 no fuel)   "
+        "pipe-group 0/1 working (1 output full)   "
+        "[item=stone-furnace] 0/1 working (1 no ingredients)"
+    )
+
+
+def test_the_research_line_lists_what_is_done_and_in_progress():
+    assert after(panel(), "Research") == (
+        "2 done: steam-power, electronics · researching: nothing"
+    )
+    busy = {**OBSERVATION["research"], "current_research": "automation"}
+    assert after(panel({**OBSERVATION, "research": busy}), "Research").endswith(
+        "researching: automation"
+    )
+
+
+def test_the_milestone_line_follows_the_scorer():
+    state = panel()
+    milestone = line_starting(state, "Milestone")
+    assert milestone == "Milestone 5/13: Copper plate (step 14)"
+
+
+def test_long_lists_are_cut_with_a_count_of_the_rest():
+    many = [{"quantity": str(100 - i), "type": f"item-{i:02}"} for i in range(20)]
+    line = after(panel({**OBSERVATION, "inventory": many}), "Inventory")
+    assert line.count("[item=") == watch.HUD_ITEMS
+    assert line.endswith("+4 more")
+
+
+def test_missing_or_odd_observation_fields_leave_their_lines_empty():
+    state = panel({"inventory": "not a list", "flows": None, "entities": [42]})
+    assert after(state, "Inventory") == "(empty)"
+    assert after(state, "Factory") == "(nothing built)"
+    assert line_starting(state, "Made:") == "Made: nothing"
+
+
+def test_the_default_trajectory_dir_is_the_repository_s():
+    """The watcher is started from ~/fle-work; a relative default found nothing."""
+    assert watch.DEFAULT_TRAJECTORY_DIR == Path(watch.__file__).resolve().parents[1] / (
+        "trajectories"
+    )
+    assert watch.build_parser().parse_args([]).trajectory_dir == str(
+        watch.DEFAULT_TRAJECTORY_DIR
+    )
 
 
 def test_hud_lua_survives_quotes_and_closing_brackets():
@@ -414,3 +536,16 @@ def test_main_stops_cleanly_on_interrupt(monkeypatch):
 
     monkeypatch.setattr(watch, "watch", interrupted)
     assert watch.main([]) == 0
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("iron-plate", "[item=iron-plate]"),
+        ("steam", "[fluid=steam]"),
+        ("pipe-group", "pipe-group"),
+        ("science", "science"),
+    ],
+)
+def test_icons_only_for_real_items_and_fluids(name, expected):
+    assert watch.icon(name) == expected

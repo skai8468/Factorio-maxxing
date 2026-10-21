@@ -32,11 +32,13 @@ import logging
 import re
 import sys
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
 from typing import Any
+
+from factorio_maxxing.scorer import ScoreTracker
 
 DEFAULT_INTERVAL = 0.1
 """Seconds between checks. Each check keeps watchers locked out and in god mode,
@@ -60,6 +62,12 @@ the reconnect's map save fails once FLE has loaded its tools (D43). Done in adva
 run's own call finds the chunks generated and returns in 0.01 s."""
 
 WATCHER_GROUP = "watchers"
+
+DEFAULT_TRAJECTORY_DIR = Path(__file__).resolve().parent.parent / "trajectories"
+"""The repository's ``trajectories/``, where ``run.py`` writes by default. Resolved
+from this file, not the working directory: the watcher is started from ``~/fle-work``
+(fle-integration.md), where a relative ``trajectories`` finds nothing and the HUD
+silently never appears."""
 
 BEAT_TICKS = 60
 """The camera counts as running if its handler ran within this many ticks. A paused
@@ -311,17 +319,61 @@ def check_once(send: Send) -> tuple[str, bool]:
 
 COLOURS = {
     "plain": (0.9, 0.9, 0.9),
+    "heading": (1.0, 0.75, 0.4),
+    "milestone": (0.55, 1.0, 0.55),
     "intent": (0.55, 0.85, 1.0),
     "error": (1.0, 0.45, 0.4),
     "verifier": (0.75, 0.75, 0.75),
     "human": (1.0, 0.85, 0.35),
 }
 
-HUD_WIDTH = 60
-"""Characters per HUD field before it is cut with an ellipsis."""
+HUD_WIDTH = 240
+"""Characters per free-text HUD field (intent, error, verdict) before it is cut. The
+labels wrap, so this bounds the panel's height, not its width. The goal is never cut."""
 
 HUMAN_CHARS = 320
 """The human's guidance is shown verbatim up to this length, then cut."""
+
+HUD_ITEMS = 16
+"""Entries per inventory, production or factory line, largest first."""
+
+FLUIDS = frozenset(
+    {
+        "water",
+        "steam",
+        "crude-oil",
+        "heavy-oil",
+        "light-oil",
+        "petroleum-gas",
+        "lubricant",
+        "sulfuric-acid",
+    }
+)
+
+PSEUDO_ITEMS = frozenset({"science"})
+"""Names FLE reports in flows that are not game items, so have no icon."""
+
+_PROBLEMS = {
+    "NO_FUEL": "no fuel",
+    "NO_INGREDIENTS": "no ingredients",
+    "NO_POWER": "no power",
+    "LOW_POWER": "low power",
+    "FULL_OUTPUT": "output full",
+    "NO_MINABLE_RESOURCES": "no ore",
+    "NOT_PLUGGED_IN_ELECTRIC_NETWORK": "unpowered",
+    "NO_RECIPE": "no recipe",
+    "WAITING_FOR_SOURCE_ITEMS": "waiting",
+    "NOT_CONNECTED": "not connected",
+}
+"""FLE entity statuses worth flagging on the factory line, in plain words."""
+
+
+@dataclass
+class FactoryLine:
+    name: str
+    total: int = 0
+    working: int = 0
+    problems: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
@@ -329,6 +381,7 @@ class HudState:
     """What the HUD shows, built from the trajectory records seen so far."""
 
     goal: str = ""
+    max_steps: int | None = None
     step: int | None = None
     intent: str = ""
     error: str = ""
@@ -337,16 +390,31 @@ class HudState:
     help_requests: int = 0
     human: tuple[int, str | None] | None = None
     verdict: tuple[bool, str] | None = None
+    game_seconds: float | None = None
+    inventory: dict[str, float] = field(default_factory=dict)
+    made: dict[str, float] = field(default_factory=dict)
+    used: dict[str, float] = field(default_factory=dict)
+    factory: list[FactoryLine] = field(default_factory=list)
+    researched: list[str] = field(default_factory=list)
+    researching: str = ""
+    scorer: ScoreTracker = field(default_factory=ScoreTracker)
 
     def feed(self, records: Iterable[dict[str, Any]]) -> None:
         for record in records:
             kind = record.get("type")
-            if kind == "step":
+            if kind == "run":
+                self.goal = str(record.get("goal") or self.goal)
+                self.max_steps = record.get("max_steps") or self.max_steps
+            elif kind == "step":
                 self.step = record.get("step")
                 self.goal = str(record.get("goal") or self.goal)
                 self.intent = intent_of(str(record.get("policy") or ""))
                 errors = record.get("execution_errors") or []
                 self.error = last_error_line(str(errors[-1])) if errors else ""
+                self.scorer.feed(record)
+                obs = record.get("observation")
+                if isinstance(obs, dict):
+                    self._observe(obs)
             elif kind == "llm_call":
                 self.llm_calls.append(record)
                 if record.get("role") == "policy":
@@ -356,6 +424,89 @@ class HudState:
                 self.human = (int(record.get("step") or 0), record.get("text"))
             elif kind == "verification":
                 self.verdict = (bool(record.get("done")), str(record.get("reason") or ""))
+
+    def _observe(self, obs: dict[str, Any]) -> None:
+        """The control-panel fields, from one step's recorded observation. Every
+        shape is read defensively: a field FLE did not send leaves its line empty."""
+        self.inventory = _counts(obs.get("inventory"), "quantity")
+        flows = obs.get("flows") if isinstance(obs.get("flows"), dict) else {}
+        self.made = _counts(flows.get("output"), "rate")
+        self.used = _counts(flows.get("input"), "rate")
+        self.factory = _factory(obs.get("entities"))
+        research = obs.get("research") if isinstance(obs.get("research"), dict) else {}
+        self.researched = [
+            str(t.get("name"))
+            for t in research.get("technologies") or []
+            if isinstance(t, dict) and t.get("researched")
+        ]
+        current = str(research.get("current_research") or "")
+        self.researching = "" if current in ("", "None") else current
+        game = obs.get("game_info") if isinstance(obs.get("game_info"), dict) else {}
+        seconds = game.get("time")
+        self.game_seconds = float(seconds) if isinstance(seconds, int | float) else None
+
+
+def _counts(entries: Any, amount_key: str) -> dict[str, float]:
+    """{name: amount} from FLE's [{"type": name, amount_key: n}, ...] lists."""
+    counts: dict[str, float] = {}
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, dict) or not entry.get("type"):
+            continue
+        try:
+            amount = float(entry.get(amount_key) or 0)
+        except (TypeError, ValueError):
+            continue
+        name = str(entry["type"])
+        counts[name] = counts.get(name, 0.0) + amount
+    return counts
+
+
+def _factory(entities: Any) -> list[FactoryLine]:
+    """Entities grouped by name: how many, how many WORKING, and what ails the rest."""
+    lines: dict[str, FactoryLine] = {}
+    for entity in entities if isinstance(entities, list) else []:
+        if not isinstance(entity, dict) or not entity.get("name"):
+            continue
+        name = str(entity["name"])
+        line = lines.setdefault(name, FactoryLine(name))
+        line.total += 1
+        status = str(entity.get("status") or "").removeprefix("EntityStatus.")
+        if status == "WORKING":
+            line.working += 1
+        elif status in _PROBLEMS:
+            word = _PROBLEMS[status]
+            line.problems[word] = line.problems.get(word, 0) + 1
+    return sorted(lines.values(), key=lambda line: (-line.total, line.name))
+
+
+def icon(name: str) -> str:
+    """Factorio rich text for an item or fluid. FLE's pseudo-names - grouped
+    entities (``pipe-group``) and research progress in flows (``science``) - have no
+    icon and are written out."""
+    if name.endswith("-group") or name in PSEUDO_ITEMS:
+        return name
+    return f"[fluid={name}]" if name in FLUIDS else f"[item={name}]"
+
+
+def _amount(value: float) -> str:
+    if value >= 10 or float(value).is_integer():
+        return f"{value:,.0f}"
+    return f"{value:.1f}"
+
+
+def _clock(seconds: float) -> str:
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02}:{secs:02}" if hours else f"{minutes}:{secs:02}"
+
+
+def _top(counts: dict[str, float], sign: str = "") -> str:
+    ranked = [
+        (n, a) for n, a in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])) if a
+    ]
+    shown = [f"{icon(name)} {sign}{_amount(n)}" for name, n in ranked[:HUD_ITEMS]]
+    more = len(ranked) - len(shown)
+    return "   ".join(shown) + (f"   +{more} more" if more > 0 else "")
 
 
 def _cut(text: str, limit: int = HUD_WIDTH) -> str:
@@ -387,21 +538,45 @@ def last_error_line(error: str) -> str:
 
 
 def hud_lines(state: HudState) -> list[tuple[str, str]]:
-    """(text, colour) per HUD line. Steps are shown 1-based, as the run summary counts."""
+    """(text, colour) per HUD line. Steps are shown 1-based, as the run summary counts.
+
+    The top half is the run - goal, milestone, what the agent is doing and what went
+    wrong; the bottom half is the factory, from the latest recorded observation:
+    inventory, this step's production, entities and research.
+    """
     from factorio_maxxing.pricing import summarize
 
     cost = sum(usage.cost for usage in summarize(state.llm_calls))
     step = "-" if state.step is None else str(state.step + 1)
+    if state.max_steps:
+        step += f"/{state.max_steps}"
     header = f"Step {step} · {state.model or '?'} · ~${cost:.2f}"
+    if state.game_seconds is not None:
+        header += f" · game {_clock(state.game_seconds)}"
     if state.help_requests:
         header += f" · help asked {state.help_requests}×"
     lines = [(header, "plain")]
     if state.goal:
-        lines.append(("Goal: " + _cut(state.goal), "plain"))
+        lines.append(("Goal: " + " ".join(state.goal.split()), "plain"))
+
+    ladder = state.scorer.ladder
+    score = state.scorer.score()
+    if score.highest:
+        rung = ladder[score.highest - 1]
+        lines.append(
+            (
+                f"Milestone {score.highest}/{len(ladder)}: {rung.description} "
+                f"(step {score.reached[rung.key] + 1})",
+                "milestone",
+            )
+        )
+    elif state.step is not None:
+        lines.append((f"Milestone 0/{len(ladder)}", "milestone"))
+
     if state.intent:
         lines.append(("▶ " + _cut(state.intent), "intent"))
     if state.error:
-        lines.append(("✗ " + _cut(state.error, HUD_WIDTH * 2), "error"))
+        lines.append(("✗ " + _cut(state.error), "error"))
     if state.verdict is not None:
         done, reason = state.verdict
         lines.append(
@@ -415,7 +590,37 @@ def hud_lines(state: HudState) -> list[tuple[str, str]]:
         at, text = state.human
         said = _cut(text, HUMAN_CHARS) if text else "(no guidance)"
         lines.append((f"Human (step {at + 1}): {said}", "human"))
+
+    if state.step is None:
+        return lines
+    research = f"{len(state.researched)} done"
+    if state.researched:
+        research += ": " + ", ".join(state.researched)
+    research += " · researching: " + (state.researching or "nothing")
+    lines += [
+        ("Inventory", "heading"),
+        (_top(state.inventory) or "(empty)", "plain"),
+        ("Production this step", "heading"),
+        ("Made: " + (_top(state.made, "+") or "nothing"), "plain"),
+        ("Used: " + (_top(state.used, "-") or "nothing"), "plain"),
+        ("Factory", "heading"),
+        (_factory_text(state.factory) or "(nothing built)", "plain"),
+        ("Research", "heading"),
+        (research, "plain"),
+    ]
     return lines
+
+
+def _factory_text(factory: Sequence[FactoryLine]) -> str:
+    parts = []
+    for line in factory[:HUD_ITEMS]:
+        text = f"{icon(line.name)} {line.working}/{line.total} working"
+        if line.problems:
+            ills = ", ".join(f"{n} {word}" for word, n in line.problems.items())
+            text += f" ({ills})"
+        parts.append(text)
+    more = len(factory) - len(parts)
+    return "   ".join(parts) + (f"   +{more} more" if more > 0 else "")
 
 
 def _lua_string(text: str) -> str:
@@ -444,7 +649,7 @@ def hud_lua(lines: list[tuple[str, str]]) -> str:
         "f.location = {x = 12, y = 80} "
         "for _, l in ipairs(L) do "
         'local w = f.add{type = "label", caption = l[1]} '
-        "w.style.single_line = false w.style.maximal_width = 560 "
+        "w.style.single_line = false w.style.maximal_width = 680 "
         "w.style.font_color = l[2] end end "
         'rcon.print("hud")'
     )
@@ -600,8 +805,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--trajectory-dir",
-        default="trajectories",
-        help="where the run writes its trajectory, for the HUD (default trajectories)",
+        default=str(DEFAULT_TRAJECTORY_DIR),
+        help="where the run writes its trajectory, for the HUD "
+        "(default: this repository's trajectories/)",
     )
     parser.add_argument("--no-hud", action="store_true", help="do not show the HUD")
     return parser

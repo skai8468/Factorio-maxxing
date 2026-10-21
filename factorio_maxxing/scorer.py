@@ -252,30 +252,53 @@ class Score:
         return LADDER[self.highest - 1].key if self.highest else None
 
 
+class ScoreTracker:
+    """Scores a trajectory one record at a time, for a reader following a live run.
+
+    ``score_records`` is this over a whole file; the watcher feeds it as records arrive
+    so it never rescans the run. Only ``step`` records are read (D62).
+    """
+
+    def __init__(self, ladder: Sequence[Milestone] = LADDER):
+        self.ladder = ladder
+        self.history = History()
+        self.reached: dict[str, int] = {}
+        self.run_id: str | None = None
+        self.steps = 0
+
+    def feed(self, record: dict[str, Any]) -> None:
+        if record.get("type") != "step":
+            return
+        self.run_id = self.run_id or record.get("run_id")
+        self.steps += 1
+        obs = record.get("observation")
+        if not isinstance(obs, dict):
+            return
+        self.history.items |= produced_items(obs)
+        for milestone in self.ladder:
+            if milestone.key not in self.reached and milestone.check(obs, self.history):
+                self.reached[milestone.key] = record.get("step", self.steps - 1)
+
+    def score(self) -> Score:
+        highest = max(
+            (i for i, m in enumerate(self.ladder, 1) if m.key in self.reached), default=0
+        )
+        return Score(
+            run_id=self.run_id,
+            steps=self.steps,
+            reached=dict(self.reached),
+            highest=highest,
+        )
+
+
 def score_records(
     records: Iterable[dict[str, Any]], ladder: Sequence[Milestone] = LADDER
 ) -> Score:
     """Score a trajectory's records. Only ``step`` records are read (D62)."""
-    history = History()
-    reached: dict[str, int] = {}
-    run_id = None
-    steps = 0
+    tracker = ScoreTracker(ladder)
     for record in records:
-        if record.get("type") != "step":
-            continue
-        run_id = run_id or record.get("run_id")
-        steps += 1
-        obs = record.get("observation")
-        if not isinstance(obs, dict):
-            continue
-        history.items |= produced_items(obs)
-        for milestone in ladder:
-            if milestone.key not in reached and milestone.check(obs, history):
-                reached[milestone.key] = record.get("step", steps - 1)
-    highest = max(
-        (index for index, m in enumerate(ladder, 1) if m.key in reached), default=0
-    )
-    return Score(run_id=run_id, steps=steps, reached=reached, highest=highest)
+        tracker.feed(record)
+    return tracker.score()
 
 
 def score_trajectory(path: Path | str) -> Score:
