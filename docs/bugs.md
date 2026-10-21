@@ -74,3 +74,27 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
 - **Data effect:** human-effort tables for earlier human runs lack answer times.
 - **Fix:** `answer_seconds` on every intervention record - commit `a6d95b1`, D72.
 - **Status:** fixed.
+
+## B6 - FLE's production scores look broken (not a bug: what the fields mean)
+
+- **Found:** 2026-10-21, cell-5 run `20261021T172150-ba5dcf0a`.
+- **Component:** FLE (`env/gym_env/environment.py`), as read by the harness.
+- **Symptom:** the observation's `score` was 0 at most steps; `automated_score` rose to
+  ~3,500 by step 75, then fell to -500,696 by step 300.
+- **Cause:** neither is broken. `score` is FLE's *per-step change* in production score
+  (`production_score - initial_score - error_penalty`, penalty 0), not a total; the game
+  is paused between steps, so most steps change nothing. Summed over the run it is FLE's
+  cumulative production score: **-356** here (the step records' `reward` sums to the same).
+  `automated_score` is cumulative but credits only machine production; on our reading of
+  FLE's score (value made minus value consumed - not yet confirmed in its source), labs
+  consuming *hand-crafted* science packs count against it, while the hand-crafting itself
+  is excluded - hence the dive in a run that crafts all its science by hand.
+- **Data effect:** none on recorded data - the per-step values are recorded faithfully.
+  But FLE's production score rewards making and keeping items; research *consumes* them,
+  so a run climbing the tech tree (our goal, D67) can score negative. FLE's leaderboard
+  figures (e.g. 293,206) are this cumulative score under FLE's own goal ("the highest
+  automatic production score rate").
+- **Fix:** none needed in code. **Open for the research lead:** whether FLE production
+  score stays a secondary metric (build-plan 5), and if so as the sum of per-step score.
+- **Status:** explained.
+

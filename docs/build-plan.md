@@ -799,7 +799,8 @@ repeated errors plus a 20-step backstop (D67) ✓ · 21. 300-step cap plus a `ma
 and the pricing table (D68) ✓ · 22. annotation schema and a validator, exported from the
 codebook workbook (D69) ✓ · 23. one config per grid cell, and a `run` record in every
 trajectory (D70) ✓ ·
-24. a live run that stops at its cap and is scored
+24. a live run that stops at its cap and is scored - cell 5,
+`20261021T172150-ba5dcf0a`: 300 steps, 13/24, annotations valid, awaiting verification ✓
 
 **E1** — 25. guidance protocol written · 26. pilot of runs 1, 2, 5, 6 · 27. annotate
 every stuck event · 28. codebook v1
