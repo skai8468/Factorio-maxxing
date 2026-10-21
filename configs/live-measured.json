@@ -1,6 +1,6 @@
 {
-  "policy_model": "claude-haiku-4-5",
-  "verifier_model": "claude-sonnet-5-5",
+  "policy_model": "open-router-anthropic/claude-haiku-4.5",
+  "verifier_model": "open-router-anthropic/claude-sonnet-5.5",
   "human": "interactive",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 3,

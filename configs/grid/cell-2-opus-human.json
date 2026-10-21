@@ -1,6 +1,6 @@
 {
-  "policy_model": "claude-opus-5-5",
-  "verifier_model": "claude-opus-5-5",
+  "policy_model": "open-router-anthropic/claude-opus-5.5",
+  "verifier_model": "open-router-anthropic/claude-opus-5.5",
   "human": "panel",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 3,

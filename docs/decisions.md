@@ -2691,3 +2691,33 @@ trajectory can be rescored. Annotation rows stamp the ladder version and compute
 `unstuck` from it, so unstuck values change with the ladder (more rungs, more chances to
 be unstuck).
 
+---
+
+## D77 - Every run bills OpenRouter credits, not the Anthropic API key
+
+**Decision (research lead, 2026-10-21):** from the next run on, the harness uses the
+OpenRouter key. Every shipped config - the six grid cells, `live-measured`,
+`live-watchable`, the example - and `Config`'s default now name models with the
+`open-router-` prefix, so calls go to OpenRouter on `OPEN_ROUTER_API_KEY` (D54):
+`open-router-anthropic/claude-opus-5.5`, `open-router-anthropic/claude-haiku-5.5`
+(`open-router-openai/gpt-6-luna` already did). A test fails if any shipped config or the
+default would call Anthropic directly. The cell-5 run in progress
+(`20261021T172150-ba5dcf0a`) started on the Anthropic key and finishes on it.
+
+**Same models, same list prices.** OpenRouter's catalogue (checked 2026-10-21) lists
+`anthropic/claude-opus-5.5` at $4 / $20 per million (cache read $0.20, write $5) and
+`anthropic/claude-haiku-5.5` at $0.10 / $0.50 (cache read $0.01, write $0.125) - the
+pricing table's figures, so estimates and the $50 ceiling are unchanged. Not modelled,
+as before (D54): OpenRouter's fee on buying credits, and Haiku 5.5's above-100K tier
+(OpenRouter lists a flat rate; prompts measured ~60K, below it).
+
+**What changes on the wire.** Claude calls move from the Messages API (D51) to
+OpenRouter's chat-completions protocol, with the cached part of the prompt marked
+`cache_control` - the path D54 measured for Haiku 4.5 and Sonnet 5.5, and D66 for GPT 6
+Luna, but not yet for the 5.5 Claude models, which always think. **The next run is the
+check:** cache reads should appear from step 1, and output tokens should include the
+thinking, as on the direct path.
+
+**For comparability,** a run's `run` record names the model string, so direct and
+OpenRouter runs stay distinguishable; the pilot runs so far are not grid data either way.
+

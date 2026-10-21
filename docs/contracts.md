@@ -327,8 +327,8 @@ on any problem. No control-flow module imports this one.
 
 ```json
 {
-  "policy_model": "claude-haiku-4-5",
-  "verifier_model": "claude-haiku-4-5",
+  "policy_model": "open-router-anthropic/claude-haiku-4.5",
+  "verifier_model": "open-router-anthropic/claude-haiku-4.5",
   "human": "interactive",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 3,
@@ -377,7 +377,9 @@ changes the run; both reach the `run` record. The grid's configs are
 from the pricing table is refused before the run starts; the offline `stub` is exempt
 (D68).
 
-API keys come from environment variables, never this file. For an identity-linked API
+API keys come from environment variables, never this file. Every shipped config routes
+through OpenRouter (`open-router-` prefix, `OPEN_ROUTER_API_KEY`), never the Anthropic
+key directly; a test enforces it (D77). For an identity-linked API
 key, `ANTHROPIC_WORKSPACE_ID` must be set alongside the key (`decisions.md` D27).
 
 `api_reference` is a path to a file describing the functions the environment provides,

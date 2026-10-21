@@ -107,8 +107,10 @@ class ConfigError(Exception):
 class Config:
     """The build-plan section 12 configuration. API keys are never fields here."""
 
-    policy_model: str = "claude-haiku-4-5"
-    verifier_model: str = "claude-haiku-4-5"
+    policy_model: str = "open-router-anthropic/claude-haiku-4.5"
+    """Every shipped config and this default route through OpenRouter, so runs bill
+    OpenRouter credits, never the Anthropic API key (D77)."""
+    verifier_model: str = "open-router-anthropic/claude-haiku-4.5"
     human: str = "interactive"
     stuck_detector: str = DEFAULT_DETECTOR
     stuck_threshold: int = 3

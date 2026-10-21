@@ -63,8 +63,8 @@ def write_config(tmp_path, **values):
 
 def test_defaults_match_the_documented_config():
     config = Config()
-    assert config.policy_model == "claude-haiku-4-5"
-    assert config.verifier_model == "claude-haiku-4-5"
+    assert config.policy_model == "open-router-anthropic/claude-haiku-4.5"
+    assert config.verifier_model == "open-router-anthropic/claude-haiku-4.5"
     assert config.human == "interactive"
     assert config.stuck_detector == "consecutive_failures+error_signature"
     assert config.stuck_threshold == 3
@@ -475,8 +475,8 @@ def test_live_measured_config_separates_the_thresholds():
     """The long-goal settings of D50; every key must be one the harness understands."""
     config = Config(**load_config("configs/live-measured.json"))
     assert config.environment == "live"
-    assert config.policy_model == "claude-haiku-4-5"
-    assert config.verifier_model == "claude-sonnet-5-5"
+    assert config.policy_model == "open-router-anthropic/claude-haiku-4.5"
+    assert config.verifier_model == "open-router-anthropic/claude-sonnet-5.5"
     assert config.pause_after_action is True
     assert config.fast_mode is True
     assert config.stuck_threshold == 3
@@ -916,10 +916,10 @@ def test_grid_cells_differ_only_in_model_and_human():
 @pytest.mark.parametrize(
     ("cell", "model", "human"),
     [
-        ("1", "claude-opus-5-5", "none"),
-        ("2", "claude-opus-5-5", "panel"),
-        ("5", "claude-haiku-5-5", "none"),
-        ("6", "claude-haiku-5-5", "panel"),
+        ("1", "open-router-anthropic/claude-opus-5.5", "none"),
+        ("2", "open-router-anthropic/claude-opus-5.5", "panel"),
+        ("5", "open-router-anthropic/claude-haiku-5.5", "none"),
+        ("6", "open-router-anthropic/claude-haiku-5.5", "panel"),
         ("5'", "open-router-openai/gpt-6-luna", "none"),
         ("6'", "open-router-openai/gpt-6-luna", "panel"),
     ],
@@ -1022,3 +1022,18 @@ def test_the_panel_backend_hands_over_beside_the_trajectories(tmp_path):
 
 def test_the_panel_flag_is_accepted():
     assert resolve_config(parse("--goal", "g", "--human", "panel")).human == "panel"
+
+
+def test_every_shipped_config_bills_openrouter():
+    """D77: runs use the OpenRouter key, never the Anthropic API key."""
+    from factorio_maxxing.llm import PROVIDERS
+
+    prefix = PROVIDERS["open-router"].model_prefix
+    paths = [*Path("configs").glob("*.json"), *Path("configs/grid").glob("*.json")]
+    for path in paths:
+        if "_model" not in path.read_text(encoding="utf-8"):
+            continue
+        config = Config(**load_config(path))
+        for model in (config.policy_model, config.verifier_model):
+            assert model.startswith(prefix), f"{path}: {model}"
+    assert Config().policy_model.startswith(prefix)
