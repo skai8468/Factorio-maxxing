@@ -299,7 +299,7 @@ One JSON object per stuck event in `annotations/<run_id>.jsonl`, keys in this or
  "guidance_category": "G2", "guidance_secondary": "G1", "guidance_text": "...",
  "guidance_mentions_api": true, "unstuck": "yes", "unstuck_k": 10,
  "ladder_version": "v0-draft", "codebook_version": "v0", "annotator": "...",
- "notes": null}
+ "verified_by": null, "notes": null}
 ```
 
 - *From the trajectory, verbatim:* `intervention_index`, `stuck_reason`, `guidance_text`
@@ -310,7 +310,9 @@ One JSON object per stuck event in `annotations/<run_id>.jsonl`, keys in this or
   unstuck_k`, else `no` - stamped with `ladder_version`.
 - *From the annotator:* `grid_cell` (`1`-`8`, `5'`-`8'` or `pilot`), `harness`
   (`standard` / `specialized`), `human`, the codes (`E01`-`E09`, `G1`-`G5`, codebook v0),
-  notes and `annotator`. With no guidance text the guidance fields are null; with it,
+  notes, `annotator` and `verified_by` - null for a draft, the verifier's name once
+  checked (D74); `unverified(rows)` lists the steps still awaiting it. With no guidance
+  text the guidance fields are null; with it,
   a primary guidance code and `guidance_mentions_api` are required. A secondary code
   may not repeat its primary; `E09` needs an `error_note`, `G5` a `notes`.
 

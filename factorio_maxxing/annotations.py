@@ -83,6 +83,7 @@ COLUMNS = {
     "codebook version": "codebook_version",
     "annotator": "annotator",
     "notes": "notes",
+    "verified by": "verified_by",
 }
 """Workbook header -> field. The sheet's policy model, intervention_index,
 stuck_reason and guidance text columns are for the annotator's eye only: export takes
@@ -109,6 +110,7 @@ FIELDS = (
     "ladder_version",
     "codebook_version",
     "annotator",
+    "verified_by",
     "notes",
 )
 """Every key of an annotation row, in the order it is written."""
@@ -237,6 +239,8 @@ def _row_problems(row: Mapping[str, Any]) -> list[str]:
         problems.append(f"codebook version must be {CODEBOOK_VERSION}")
     if not _text(row["annotator"]):
         problems.append("annotator is required")
+    if row["verified_by"] is not None and not _text(row["verified_by"]):
+        problems.append("verified_by must be a name or empty")
     if row["unstuck"] not in UNSTUCK_VALUES:
         problems.append(f"unstuck must be one of {', '.join(UNSTUCK_VALUES)}")
     if not isinstance(row["unstuck_k"], int) or row["unstuck_k"] < 1:
@@ -367,6 +371,7 @@ def row_from_sheet(
         guidance_secondary=values["guidance_secondary"],
         codebook_version=values["codebook_version"],
         annotator=values["annotator"],
+        verified_by=values["verified_by"],
         notes=values["notes"],
         unstuck_k=k,
         ladder_version=LADDER_VERSION,
@@ -435,6 +440,12 @@ def export(
         written.append(out_dir / f"{run_id}.jsonl")
         problems += _missing(facts, (r["step"] for r in built))
     return written, problems
+
+
+def unverified(rows: Iterable[Mapping[str, Any]]) -> list[int]:
+    """Steps whose rows nobody has verified yet (D74). Drafts - an LLM's pre-coding -
+    are valid annotations, but only verified rows are the catalogue."""
+    return [row["step"] for row in rows if not _text(row.get("verified_by"))]
 
 
 def write_annotations(path: Path, rows: Iterable[Mapping[str, Any]]) -> None:
@@ -598,7 +609,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"error: {error}", file=sys.stderr)
             return 2
         for path in written:
-            print(f"wrote {path}")
+            waiting = unverified(read_annotations(path))
+            note = f", {len(waiting)} awaiting verification" if waiting else ""
+            print(f"wrote {path}{note}")
     else:
         problems = []
         for name in args.files:
@@ -615,7 +628,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             found = validate(rows, facts)
             problems += found
             if not found:
-                print(f"valid: {name} ({len(rows)} stuck events)")
+                waiting = unverified(rows)
+                note = f", {len(waiting)} awaiting verification" if waiting else ""
+                print(f"valid: {name} ({len(rows)} stuck events{note})")
 
     for problem in problems:
         print(f"problem: {problem}", file=sys.stderr)

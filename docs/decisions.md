@@ -2606,3 +2606,37 @@ harness is not frozen either). Its stuck events - all six from the 20-step backs
 steps 19, 39, 59, 79, 99 and 119 - are codable: the four from step 59 on are E08
 Environment / infra (attribution: environment), with E06 Repetition loop secondary.
 
+---
+
+## D74 - Pre-freeze issues go to a bug log and the codebook; grid stuck events are pre-coded and verified
+
+**Decision (research lead, 2026-10-21).**
+
+1. **Until the standard harness is frozen**, every issue met in a live run is recorded
+   as a bug in `docs/bugs.md` (component, symptom, cause, data effect, fix, status),
+   **and** its stuck events are coded in the workbook's Annotations sheet, with
+   *pre-freeze* in the notes so grid analysis can exclude them. Chosen over the Worked
+   examples sheet or a separate sheet: the rows are counted and exported like any
+   other, which also exercises the pipeline.
+2. **During grid runs, the human verifies rather than records.** Claude pre-codes every
+   stuck event in the workbook (`annotator: Claude (draft)`); the research lead checks
+   each row, corrects it if needed, and puts their initials under **verified by**. Only
+   verified rows are the catalogue. This is the "LLM pre-labelling, a human checks every
+   label" path build-plan 5b already allowed, made the default.
+
+**Schema.** Annotation rows gain `verified_by` (column T, "verified by"; JSONL field,
+null for a draft). Validation accepts drafts - a draft is a complete annotation - and
+rejects a blank-but-present verifier; `export` and `validate` report how many rows still
+await verification. The worked examples are marked `pending`, as they were coded by
+Claude for confirmation (D69).
+
+**First use.** The stopped cell-5 run (`20261021T162318-3e77267c`, B1/D73) is pre-coded:
+steps 59, 79, 99, 119 as E08 (E06 secondary); steps 19 and 39 as E09 - the 20-step
+backstop fired with nothing wrong, which v0 has no code for. **Flagged for codebook v1:**
+the backstop (D67) will produce such false alarms routinely; a dedicated code (e.g.
+"no error - backstop") would keep them out of E09.
+
+**Open, for the research lead:** which model pre-codes during the grid. Drafting by hand
+in a Claude Code session, as here, costs nothing per run; an automated pre-coder would
+need a fixed model, the same for every cell, so labels cannot vary with the run's model.
+

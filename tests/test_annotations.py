@@ -26,6 +26,7 @@ from factorio_maxxing.annotations import (
     row_from_sheet,
     run_facts,
     unstuck,
+    unverified,
     validate,
     write_annotations,
 )
@@ -136,6 +137,7 @@ def row(**overrides):
         "ladder_version": LADDER_VERSION,
         "codebook_version": CODEBOOK_VERSION,
         "annotator": "research lead",
+        "verified_by": None,
         "notes": None,
     }
     base.update(overrides)
@@ -616,3 +618,31 @@ def test_a_run_outside_the_grid_does_not_constrain_the_cell():
 
 def test_a_trajectory_from_before_the_run_record_still_validates():
     assert FACTS.config is None
+
+
+# --- Drafts and verification (D74) --------------------------------------------------
+
+
+def test_a_draft_row_is_valid_but_awaits_verification():
+    rows = [row(unstuck="yes", annotator="Claude (draft)"), declined()]
+    assert validate(rows, FACTS) == []
+    assert unverified(rows) == [9, 20]
+
+
+def test_a_verified_row_no_longer_awaits_verification():
+    rows = [row(unstuck="yes", verified_by="SK"), declined(verified_by="SK")]
+    assert unverified(rows) == []
+
+
+def test_a_blank_verifier_is_rejected():
+    problems = validate([row(unstuck="yes", verified_by="  "), declined()], FACTS)
+    assert f"{RUN} step 9: verified_by must be a name or empty" in problems
+
+
+def test_export_carries_the_verifier_from_the_sheet(tmp_path):
+    write_trajectory(tmp_path / "traj")
+    book = workbook(tmp_path, sheet_row(**{"verified by": "SK"}), declined_sheet_row())
+    written, _ = export(book, tmp_path / "traj", tmp_path / "out")
+    first, second = read_annotations(written[0])
+    assert first["verified_by"] == "SK"
+    assert second["verified_by"] is None

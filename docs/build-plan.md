@@ -189,8 +189,13 @@ other.
 
 - Stuck events in no-human runs are annotated too (error fields only): they show what
   goes wrong when nobody helps.
-- Labelled by hand after each run. LLM pre-labelling is allowed only if a human checks
-  every label.
+- **Pre-coded by Claude, verified by the research lead (D74).** After each run Claude
+  writes every stuck event into the workbook as `Claude (draft)`; the research lead
+  checks each row, corrects it if needed and initials it under *verified by*. Only
+  verified rows count as the catalogue.
+- **Before the freeze** (`standard-harness-v1`), issues met in live runs go in
+  `docs/bugs.md` **and** their stuck events are coded in the Annotations sheet, marked
+  *pre-freeze* in the notes so grid analysis can exclude them (D74).
 - The codebook is revised once, after E1, and every row carries its version.
 
 **The codebook is a workbook: `docs/codebook-v0.xlsx`** (research lead, 2026-10-19). It
