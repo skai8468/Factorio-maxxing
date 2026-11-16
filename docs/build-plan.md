@@ -164,10 +164,12 @@ and 5'-8' for GPT 6 Luna.
   human backend and label; a test enforces it. Each run's trajectory opens with a `run`
   record of its full config and commit (D70).
 - Further models are further rows; the grid does not change shape.
-- **Models (D64), all through OpenRouter (D77):** frontier **Claude Opus 5.5**; budget **Claude Haiku 5.5** and
-  **GPT 6 Luna** - two budget rows, so the grid has 12 cells per seed.
-- **Seeds (D65):** Opus 5.5 runs **one seed** (4 runs, at most $200), for budget
-  reasons. **TBD — research lead:** seeds for the budget models (cheap, ~$1 per run;
+- **Models (D64, D84), all through OpenRouter (D77):** frontier **GPT 6 Astra**; budget
+  **GPT 6 Luna** (its own family's budget tier; cells 5', 6') and **Claude Haiku 5.5**
+  (cells 5, 6) - two budget rows, so the grid has 12 cells per seed. Opus 5.5 was the
+  frontier model until its provider refused the prompt (B8, D84).
+- **Seeds (D65):** the frontier model runs **one seed** (4 runs, ~$48 each estimated
+  for Astra - near the $50 ceiling), for budget reasons. **TBD — research lead:** seeds for the budget models (cheap, ~$1 per run;
   ≥3 recommended).
 
 ## 5b. Error and guidance catalogue

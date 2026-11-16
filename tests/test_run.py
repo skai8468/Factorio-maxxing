@@ -917,8 +917,8 @@ def test_grid_cells_differ_only_in_model_and_human():
 @pytest.mark.parametrize(
     ("cell", "model", "human"),
     [
-        ("1", "open-router-anthropic/claude-opus-5.5", "none"),
-        ("2", "open-router-anthropic/claude-opus-5.5", "panel"),
+        ("1", "open-router-openai/gpt-6-astra", "none"),  # D84
+        ("2", "open-router-openai/gpt-6-astra", "panel"),
         ("5", "open-router-anthropic/claude-haiku-5.5", "none"),
         ("6", "open-router-anthropic/claude-haiku-5.5", "panel"),
         ("5'", "open-router-openai/gpt-6-luna", "none"),

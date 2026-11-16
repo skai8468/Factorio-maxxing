@@ -2890,3 +2890,31 @@ commit.
 **Still open:** the frontier model. Under this key, Opus 5.5, Opus 5 and Sonnet 5.5
 are refused, Opus 4.8 accepts, and Fable is not offered (B8). D64 stands until the
 research lead replaces it.
+
+---
+
+## D84 - The frontier model is GPT 6 Astra
+
+**Decision (research lead, 2026-11-17).** This replaces D64's frontier model, Claude Opus
+5.5. Opus 5.5 refuses the standard harness's prompt on every route this project's
+OpenRouter key can reach (B8), and so do Opus 5 and Sonnet 5.5. Fable is not offered to
+the key. The research lead chose the OpenAI family instead.
+
+- **Frontier is GPT 6 Astra** (`open-router-openai/gpt-6-astra`), the top tier of GPT
+  6. It accepted the full step-1 prompt (B8).
+- **The cleaner pairing is Astra with GPT 6 Luna,** the same family and generation at
+  the budget tier. Matched on price, the tiers line up as Astra / Sol / Luna and
+  Fable(?) / Sonnet 5.5 / Haiku 5.5, so Luna is Haiku's counterpart and Opus 5.5 sat
+  between the top and middle tiers.
+- **Cells keep their labels** so recorded runs stay valid. Cells 1 and 2
+  (`cell-1-astra.json`, `cell-2-astra-human.json`) are Astra. Cells 5 and 6 stay Haiku
+  5.5, and 5' and 6' stay Luna. The family pair is therefore 1/2 against 5'/6'; Haiku is
+  the second budget row.
+- **Price.** OpenRouter lists $10 input, $50 output, $1 cache read and $12.50 cache
+  write per million tokens; it is added to the pricing table. From Luna's and Haiku's
+  measured token use, a 300-step run is estimated at about $48, just under the $50
+  ceiling (D65). A run may therefore end on spend before 300 steps. Whether to raise
+  the ceiling for Astra is open.
+
+**Version.** The grid configs and the pricing table change; harness behaviour does
+not. Tagged `standard-harness-v1.2`.

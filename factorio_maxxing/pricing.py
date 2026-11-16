@@ -44,7 +44,9 @@ PRICES_AS_OF = "2026-10-20"
 """When the table was last checked. Claude rates are Anthropic's list prices (Claude
 API reference, cached 2026-10-06); OpenRouter lists the same per-token prices for them
 (D54) and its own fees are not modelled. GPT 6 Luna's rates are OpenRouter's listing for
-``openai/gpt-6-luna`` (models API, 2026-10-20), matching third-party pages (D64, D66)."""
+``openai/gpt-6-luna`` (models API, 2026-10-20), matching third-party pages (D64, D66).
+GPT 6 Astra's are OpenRouter's listing for ``openai/gpt-6-astra`` (models API,
+2026-11-17; D84)."""
 
 PRICES: dict[str, Price] = {
     "claude-haiku-4-5": Price(input=1.00, output=5.00, cache_read=0.10, cache_write=1.25),
@@ -68,6 +70,7 @@ PRICES: dict[str, Price] = {
         input=10.00, output=50.00, cache_read=0.25, cache_write=12.50
     ),
     "gpt-6-luna": Price(input=0.10, output=0.50, cache_read=0.01, cache_write=0.125),
+    "gpt-6-astra": Price(input=10.00, output=50.00, cache_read=1.00, cache_write=12.50),
 }
 
 ROLES = ("policy", "verifier")

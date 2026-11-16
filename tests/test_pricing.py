@@ -208,3 +208,10 @@ def test_an_unpriced_call_adds_nothing_and_is_named():
 def test_a_ceiling_must_be_positive(ceiling):
     with pytest.raises(ValueError, match="positive"):
         SpendMeter(ceiling)
+
+
+def test_gpt_6_astra_is_priced_through_openrouter():
+    """D84: the frontier model has a price, so the spend ceiling can meter it."""
+    assert has_price("open-router-openai/gpt-6-astra")
+    cost = call_cost(_call("open-router-openai/gpt-6-astra", 10_000, 1_000))
+    assert cost == pytest.approx(10_000 * 10.00 / 1e6 + 1_000 * 50.00 / 1e6)
