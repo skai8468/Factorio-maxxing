@@ -81,7 +81,7 @@ point only where genuinely necessary; do not build a phase before its turn.
 |---|---|---|---|
 | **M0** ✓ | Autonomous loop | Goal → policy → Python → FLE → observation → verification | — |
 | **M1** ✓ | Human rescue | + stuck detection → human guidance → policy continues | — |
-| **E0** | Eval scaffolding | Open-ended goal ("progress as far as you can") · objective milestone **Scorer** · **300-step cap and $50 spend ceiling** (D65) · annotation schema · one run config per grid cell | A live run stops at its cap and its milestones are scored from recorded state |
+| **E0** | Eval scaffolding | Open-ended goal ("progress as far as you can") · objective milestone **Scorer** · **300-step cap and $75 spend ceiling** (D65, D85) · annotation schema · one run config per grid cell | A live run stops at its cap and its milestones are scored from recorded state |
 | **E1** | Standard-harness pilot | Runs 1, 2, 5, 6 at small n · first error catalogue · codebook v1 · guidance protocol in use | Every stuck event in the pilot is annotated |
 | **E2** | Specialized harness | Features chosen from the E1 catalogue, each switchable | Each feature has tests and a pilot run |
 | **E3** | Full grid | All 8 runs × n seeds | Every run recorded and annotated |
@@ -91,7 +91,7 @@ point only where genuinely necessary; do not build a phase before its turn.
 The catalogue from E1 decides what the specialized harness contains, so E2's design is
 driven by observed failures rather than guessed in advance.
 
-Budgets are explicit: 300 steps per run (the binding limit), plus a $50 spend ceiling
+Budgets are explicit: 300 steps per run (the binding limit), plus a $75 spend ceiling (D85)
 as a safety net (D65). The project does not promise a rocket launch ahead of results.
 
 ## 5. Metrics
@@ -148,14 +148,14 @@ and 5'-8' for GPT 6 Luna.
   **Specialized harness** = our own, built in E2 on top of the standard harness.
 - **Equal steps, not equal dollars (D65).** Every run is capped at **300 steps** (one
   policy program per step; verifier, history-summary and human turns use no steps but
-  their tokens are recorded), with a **$50 safety ceiling** against runaway spend. Cost is
+  their tokens are recorded), with a **$75 safety ceiling** against runaway spend (D85; was $50). Cost is
   an outcome, not the limit: it is reported per run and as **cost to each milestone**
   (Scorer first-step x per-step cost). *Supersedes the original equal-dollar design*: with
   a ~40x price gap, equal dollars let a budget model match milestones by sheer volume of
   attempts, confounding the human's contribution with step count. Human effort is still
   reported separately (§5).
 - **The verifier uses the policy's model in every run**, and its tokens count toward
-  the $50 ceiling. A frontier verifier in a budget run would be frontier help.
+  the ceiling. A frontier verifier in a budget run would be frontier help.
 - **Same world and starting inventory** across every run: FLE ignores a reset seed, so
   the world is the cluster's scenario map, and a "seed" is a repeat run. Every run starts
   **empty-handed**, as FLE's `open_play` does (D70).
@@ -169,7 +169,7 @@ and 5'-8' for GPT 6 Luna.
   (cells 5, 6) - two budget rows, so the grid has 12 cells per seed. Opus 5.5 was the
   frontier model until its provider refused the prompt (B8, D84).
 - **Seeds (D65):** the frontier model runs **one seed** (4 runs, ~$48 each estimated
-  for Astra - near the $50 ceiling), for budget reasons. **TBD — research lead:** seeds for the budget models (cheap, ~$1 per run;
+  for Astra, under the $75 ceiling - D85), for budget reasons. **TBD — research lead:** seeds for the budget models (cheap, ~$1 per run;
   ≥3 recommended).
 
 ## 5b. Error and guidance catalogue

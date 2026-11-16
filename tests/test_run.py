@@ -933,11 +933,11 @@ def test_each_cell_has_its_model_and_human(cell, model, human):
 
 
 def test_grid_runs_are_the_evaluation_setup():
-    """D65, D67, D70: open-ended, 300 steps, $50, empty-handed, measured settings."""
+    """D65, D67, D70, D85: open-ended, 300 steps, $75, empty-handed, measured settings."""
     for name, config in grid_configs().items():
         assert config.open_ended is True, name
         assert config.max_steps == 300, name
-        assert config.max_spend_usd == 50.0, name
+        assert config.max_spend_usd == 75.0, name
         assert config.backstop_steps == 20, name
         assert config.starting_inventory == {}, name
         assert config.environment == "live", name

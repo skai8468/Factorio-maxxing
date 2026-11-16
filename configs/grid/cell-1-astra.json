@@ -10,7 +10,7 @@
   "max_steps": 300,
   "open_ended": true,
   "backstop_steps": 20,
-  "max_spend_usd": 50.0,
+  "max_spend_usd": 75.0,
   "history_length": 8,
   "history_report_interval": 8,
   "environment": "live",

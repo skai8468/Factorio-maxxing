@@ -2918,3 +2918,17 @@ the key. The research lead chose the OpenAI family instead.
 
 **Version.** The grid configs and the pricing table change; harness behaviour does
 not. Tagged `standard-harness-v1.2`.
+
+---
+
+## D85 - The grid's spend ceiling is $75
+
+**Decision (research lead, 2026-11-17).** It raises D65's ceiling from $50 to $75 in all
+six grid configs. A 300-step GPT 6 Astra run is estimated at about $48 (D84), so at $50
+it could end on spend before its step cap. That would break D65's rule that steps are
+the binding limit. Every grid cell carries the same ceiling, because cells differ only
+in model and human (D70). For the budget cells (about $1 a run) it changes nothing.
+
+The ceiling is still a safety net, not a budget: cost is an outcome, reported per run.
+`Config`'s default and the non-grid configs stay at $50. Revisit once the first Astra
+run gives a measured cost ("for now", in the research lead's words).
