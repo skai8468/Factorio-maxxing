@@ -255,6 +255,9 @@ def test_the_standing_instructions_keep_fles_wording():
         "preserve working automated structures",
         "at most 50 lines",
         "think through each step extensively",
+        "Consider the entities each step needs",
+        "appropriate spacing and formatting",
+        "for timing decisions",
         "Use transport belts to keep burner machines fed with coal.",
         "Fuel boilers manually.",
     ):

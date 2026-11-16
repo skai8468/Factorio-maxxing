@@ -2823,9 +2823,13 @@ step extensively" (it read "think it through in prose"); the rest already carrie
 **Still different from FLE, by choice or as minor omissions:** the observation guide is
 rewritten for this harness's sections and names HUMAN GUIDANCE (D78); the goal is the
 research lead's (D67); "variables and functions you define persist between steps" is
-stated, which FLE leaves implicit; FLE's "consider entities needed for each step", "use
-appropriate spacing and formatting" and "game speed - use for timing decisions" are
-not carried.
+stated, which FLE leaves implicit.
+
+**Addendum (research lead, 2026-11-16).** Three FLE lines lost in D66's adaptation are
+restored in `HOW_TO_PLAY`: "consider the entities each step needs", "appropriate spacing
+and formatting", and FLE's "game speed - use for timing decisions" as "use the game time
+in GAME for timing decisions", since this harness's GAME section shows tick and game
+time but not speed.
 
 **Not done here:** actively asking for longer, multi-action programs. FLE's agent is not
 told that, so in this experiment it is guidance; it belongs to the specialized harness

@@ -40,10 +40,11 @@ Best practices:
 - Keep each program small and modular: at most 50 lines, one clear purpose, easy to
   debug and modify.
 - Build incrementally and verify each step. Inspect the game state before changing it.
-- Track entities across inventories and watch for missing requirements.
+- Consider the entities each step needs; track them across inventories and watch for
+  missing requirements.
 - Avoid breaking existing automated structures; preserve working automated structures.
-- Write direct interpreter commands; only wrap code in a function when it is a utility
-  you will reuse.
+- Write direct interpreter commands with appropriate spacing and formatting; only wrap
+  code in a function when it is a utility you will reuse.
 - Do not repeat steps that already succeeded - continue from where you left off.
 
 Reading the observation:
@@ -51,7 +52,8 @@ Reading the observation:
 - ENTITIES lists everything you have built, with position, status, fuel, contents and
   warnings. Read the warnings to see why something is not working.
 - RESEARCH, FLOWS (production), FUNCTIONS (utilities you defined), GAME (time and
-  score) and EXECUTION (what your last program printed, including errors).
+  score) and EXECUTION (what your last program printed, including errors). Use the
+  game time in GAME for timing decisions.
 - HISTORY REPORT summarises steps older than RECENT HISTORY.
 - HUMAN GUIDANCE, when present, is advice from a human expert who can see the game.
 
