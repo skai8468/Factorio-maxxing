@@ -161,3 +161,28 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
 
   One accepted call does not show that every later step will be accepted.
 - **Status:** fixed in the harness (v1.1); Opus 5.5 remains blocked on this key.
+
+## B9 - FLE's craft_item gives up on multi-level recipes it documents as recursive
+
+- **Found:** 2026-11-17, while coding the new-wording Haiku run `20261116T231731-65398af8`.
+- **Component:** FLE (`craft_item`, 0.4.8 @ `e2a829d`).
+- **Symptom:** a craft that needs intermediates more than one level down fails even
+  though the raw plates are in the inventory:
+  - step 97: `craft_item(lab)` failed with "still missing ingredients -
+    iron-gear-wheel x2" with 152 iron plates on hand. FLE had made the belts but not the
+    last gears.
+  - step 116: `craft_item(logistic-science-pack, 8)` failed with "recursive crafting loop
+    detected" for the inserters' gears, with 121 iron plates on hand.
+
+  The API reference sent to the model says that for "items requiring intermediate
+  resources, it will attempt to craft those first" (Recursive Crafting).
+- **Cause:** not investigated. FLE's recursive crafting does not resolve every
+  multi-level chain, and has a loop guard that trips on gear wheels needed at two
+  levels.
+- **Data effect:** a wasted or partly wasted step whenever a model relies on the
+  documented behaviour. Coded E08 (environment) at Haiku requests 99 and 119. The GPT 6
+  Luna run worked around it from step 236 ("Make components separately to avoid
+  recursive-crafting failures"). It affects every model and both harnesses the same way.
+- **Fix:** none in the frozen harness. Worth reporting upstream. The specialized harness
+  (E2) could target it if it recurs in the catalogue.
+- **Status:** open.
