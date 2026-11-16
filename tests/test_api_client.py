@@ -481,3 +481,84 @@ def test_the_workspace_header_is_still_sent_on_the_anthropic_protocol(monkeypatc
     monkeypatch.setenv("ANTHROPIC_WORKSPACE_ID", "wrkspc_mine")
     APIClient("claude-haiku-4-5")
     assert captured["default_headers"] == {"anthropic-workspace-id": "wrkspc_mine"}
+
+
+# --- refusals (B8, D83) ----------------------------------------------------------------
+
+
+REFUSAL = "This request was blocked as it seems to violate the provider's terms."
+
+
+def refused_completion(finish_reason="content_filter", refusal=REFUSAL):
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                finish_reason=finish_reason,
+                message=SimpleNamespace(content=None, refusal=refusal),
+            )
+        ],
+        usage=SimpleNamespace(prompt_tokens=50_000, completion_tokens=0),
+    )
+
+
+def test_an_openrouter_refusal_is_read_as_refused():
+    """B8: the blocked request arrived as finish_reason content_filter, no content."""
+    api, _ = client(
+        "open-router-anthropic/claude-opus-5.5", response=refused_completion()
+    )
+    response = api.generate("prompt")
+    assert response.refused is True
+    assert response.stop_reason == "content_filter"
+    assert response.refusal == REFUSAL
+    assert response.text == ""
+    assert response.input_tokens == 50_000
+
+
+def test_a_content_filter_stop_is_a_refusal_even_without_a_message():
+    api, _ = client(response=refused_completion(refusal=None))
+    response = api.generate("prompt")
+    assert response.refused is True
+    assert response.refusal is None
+
+
+def test_a_normal_completion_carries_its_finish_reason_and_is_not_refused():
+    reply = completion()
+    reply.choices[0].finish_reason = "stop"
+    api, _ = client(response=reply)
+    response = api.generate("prompt")
+    assert response.stop_reason == "stop"
+    assert response.refusal is None
+    assert response.refused is False
+
+
+def test_a_completion_without_a_finish_reason_is_not_refused():
+    api, _ = client()
+    response = api.generate("prompt")
+    assert response.stop_reason is None
+    assert response.refused is False
+
+
+def test_a_truncated_reply_is_not_a_refusal():
+    reply = completion()
+    reply.choices[0].finish_reason = "length"
+    api, _ = client(response=reply)
+    assert api.generate("prompt").refused is False
+
+
+def test_a_messages_api_refusal_is_read_as_refused():
+    reply = message(text="I can't help with that.")
+    reply.stop_reason = "refusal"
+    api, _ = claude(response=reply)
+    response = api.generate("prompt")
+    assert response.refused is True
+    assert response.stop_reason == "refusal"
+    assert response.refusal == "I can't help with that."
+
+
+def test_a_messages_api_end_turn_is_not_refused():
+    reply = message()
+    reply.stop_reason = "end_turn"
+    api, _ = claude(response=reply)
+    response = api.generate("prompt")
+    assert response.stop_reason == "end_turn"
+    assert response.refused is False

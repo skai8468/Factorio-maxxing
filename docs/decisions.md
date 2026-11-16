@@ -2857,3 +2857,36 @@ with this harness code and `dirty: false` (D70).
   version, not an edit. Specialized-harness features still wait for E2.
 - **The new-wording Haiku run** (`20261116T231731-65398af8`, cell 5) started on
   `1f206ec` before the tag. It ran the frozen harness code.
+
+---
+
+## D83 - Harness v1.1: a refused model call ends the run
+
+**Decision (research lead, 2026-11-17).** It fixes B8. The provider's stop reason and any
+refusal message are read from both wire protocols:
+- OpenAI / OpenRouter: `finish_reason`, `message.refusal`;
+- Messages API: `stop_reason`, where `refusal` is that API's refusal.
+
+Both are carried on `LLMResponse` and written to `llm_call` records when reported. A
+reply counts as **refused** if it carries a refusal message, or if its stop reason is
+`content_filter` or `refusal`.
+
+- **Policy refusal:** the call is recorded and charged, and the run ends at once with
+  `model refused: <message>`. No step is taken: there is no program to run. Before
+  this, a refusal ran as an empty program and used up the step cap. In
+  `20261117T004333-d8b88453`, 32 steps went this way.
+- **Summarizer refusal:** recorded and charged. The previous history report is kept,
+  which is what an empty report already did.
+- **Not retried.** The same prompt was refused 32 times in a row, so a retry spends
+  money without changing the outcome. A run that ends this way is not grid data. Its
+  model needs another route, or the arm needs another model.
+
+**Version.** This changes the frozen standard harness, so it is released as the tag
+`standard-harness-v1.1`. A run that is never refused behaves exactly as under
+`standard-harness-v1`, and its records are unchanged apart from the extra `stop_reason`
+field. So runs on v1 and v1.1 are comparable. Grid runs from here on name a v1.1
+commit.
+
+**Still open:** the frontier model. Under this key, Opus 5.5, Opus 5 and Sonnet 5.5
+are refused, Opus 4.8 accepts, and Fable is not offered (B8). D64 stands until the
+research lead replaces it.

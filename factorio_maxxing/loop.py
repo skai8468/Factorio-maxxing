@@ -21,6 +21,9 @@ is paged for a run that is about to stop.
 An open-ended goal (D67) has no finish line: the verifier is never consulted and the
 intervention cap never aborts, so the run ends at ``max_steps`` - or earlier only if the
 environment ends it - and a guided run lasts as long as its unguided twin.
+
+A policy call the provider refuses ends the run at once, with ``"model refused: ..."``
+and no step taken: a refusal carries no program (B8, D83).
 """
 
 import logging
@@ -195,6 +198,12 @@ def run_goal(
             report_until=report_until,
         )
         response = policy_client.generate(prompt)
+        if response.refused:
+            # A refusal carries no program. Running it as an empty step would spend the
+            # step cap on nothing while looking like an agent that does nothing (B8), so
+            # the call is charged and the run ends here, before the step (D83).
+            charge(step, "policy", response)
+            return result(False, step, f"model refused: {_refusal_text(response)}")
         policy = extract_policy(response.text)
 
         observation, reward, terminated, truncated, info = execute_policy(
@@ -230,7 +239,13 @@ def run_goal(
                 logging.warning("history report failed at step %d: %s", step, error)
             else:
                 charge(step, "summarizer", written)
-                if written.text.strip():
+                if written.refused:
+                    logging.warning(
+                        "history report refused at step %d: %s",
+                        step,
+                        _refusal_text(written),
+                    )
+                elif written.text.strip():
                     report, report_until = written.text.strip(), step
                     recorder.record_report(step, report)
 
@@ -276,6 +291,13 @@ def run_goal(
             )
 
     return result(False, goal.max_steps, "max_steps reached")
+
+
+def _refusal_text(response: LLMResponse) -> str:
+    """The refusal as one line for a run's end reason: the provider's message if it
+    gave one, otherwise its stop reason."""
+    text = " ".join((response.refusal or "").split())
+    return text[:300] if text else f"stop reason {response.stop_reason}"
 
 
 def _latest_errors(errors: Sequence[str]) -> list[str]:

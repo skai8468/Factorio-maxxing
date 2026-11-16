@@ -142,12 +142,14 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
   step with no code.
 - **Data effect:** that run's 32 steps are void: no action was taken, and it cost
   ~$0.86. It is not grid data. No earlier run has a policy call with 0 output tokens.
-- **Fix:** not yet. The harness should record `finish_reason` and any refusal, and stop
-  the run on a refusal instead of spending steps. That is a harness change after the
-  freeze, so it needs the research lead's decision (a new harness version). Running Opus
-  needs a route that accepts the prompt, which is untested:
-  - Anthropic's own endpoint, either through OpenRouter with ZDR relaxed for it, or
-    direct with a valid Anthropic key. The key in `~/fle-work/.env.local` returns 401.
+- **Fix:** `standard-harness-v1.1` (D83).
+  - `LLMResponse` carries the provider's `stop_reason` and `refusal`.
+  - `llm_call` records write both fields.
+  - A refused policy call ends the run with `model refused: ...` before the step is
+    taken.
+
+  Running Opus 5.5 still needs a route that accepts the prompt. None is available on
+  this key (see below).
 - **Other models (2026-11-17).** The same step-1 prompt was sent once through
   OpenRouter to each of these candidates. A model "accepts" when it answered with a
   python block.
@@ -158,4 +160,4 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
   - **Not available:** `google/gemini-4-carbon` is "banned" for this key (403).
 
   One accepted call does not show that every later step will be accepted.
-- **Status:** open.
+- **Status:** fixed in the harness (v1.1); Opus 5.5 remains blocked on this key.

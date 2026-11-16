@@ -97,8 +97,17 @@ class TrajectoryRecorder:
 
         ``key_id`` - which API key paid, as a fingerprint, never the key - is written
         when the client used one, so spend can be totalled per key (D56).
+        ``stop_reason`` and ``refusal`` are written when the provider reported them, so
+        a refused call is visible in the trajectory rather than looking like an empty
+        reply (B8, D83).
         """
-        extra = {"key_id": response.key_id} if response.key_id else {}
+        extra: dict[str, str] = {}
+        if response.key_id:
+            extra["key_id"] = response.key_id
+        if response.stop_reason is not None:
+            extra["stop_reason"] = response.stop_reason
+        if response.refusal is not None:
+            extra["refusal"] = response.refusal
         self._write(
             "llm_call",
             step,

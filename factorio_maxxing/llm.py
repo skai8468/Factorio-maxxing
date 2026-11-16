@@ -39,6 +39,23 @@ class LLMResponse:
     key_id: str | None = None
     """Which API key paid for the call, as a one-way fingerprint (``key_fingerprint``).
     Never the key. None for clients that use no key, such as the offline stub (D56)."""
+    stop_reason: str | None = None
+    """Why the provider stopped, as it reported it: the OpenAI protocol's
+    ``finish_reason`` or the Messages API's ``stop_reason``. None when not reported
+    (D83)."""
+    refusal: str | None = None
+    """The provider's refusal message, when it gave one (D83)."""
+
+    @property
+    def refused(self) -> bool:
+        """The provider declined to answer: a refusal message, or a stop reason of
+        ``content_filter`` or ``refusal``. Such a reply has no usable text (B8, D83)."""
+        return self.refusal is not None or self.stop_reason in REFUSAL_STOP_REASONS
+
+
+REFUSAL_STOP_REASONS = frozenset({"content_filter", "refusal"})
+"""Stop reasons that mean the provider refused: OpenRouter's and OpenAI's
+``content_filter``, and the Messages API's ``refusal`` (D83)."""
 
 
 def key_fingerprint(api_key_env: str, key: str) -> str:
@@ -308,9 +325,11 @@ class APIClient:
         if self._anthropic:
             text = _read_anthropic_text(reply)
             tokens = _read_anthropic_usage(usage)
+            stop_reason, refusal = _read_anthropic_stop(reply)
         else:
             text = _read_text(reply)
             tokens = _read_usage(usage)
+            stop_reason, refusal = _read_stop(reply)
         input_tokens, output_tokens, cache_read, cache_write = tokens
         return LLMResponse(
             text=text,
@@ -321,6 +340,8 @@ class APIClient:
             cache_write_tokens=cache_write,
             latency_seconds=latency,
             key_id=self.key_id,
+            stop_reason=stop_reason,
+            refusal=refusal,
         )
 
 
@@ -436,6 +457,35 @@ def _read_text(completion: Any) -> str:
     if not choices:
         return ""
     return getattr(choices[0].message, "content", None) or ""
+
+
+def _read_stop(completion: Any) -> tuple[str | None, str | None]:
+    """(finish_reason, refusal message) from a chat completion; either may be None.
+
+    OpenRouter reports a blocked request as ``finish_reason: content_filter`` with the
+    provider's message in ``message.refusal`` and no content (B8)."""
+    choices = getattr(completion, "choices", None) or []
+    if not choices:
+        return None, None
+    reason = getattr(choices[0], "finish_reason", None)
+    refusal = getattr(getattr(choices[0], "message", None), "refusal", None)
+    return (
+        reason if isinstance(reason, str) else None,
+        refusal if isinstance(refusal, str) and refusal else None,
+    )
+
+
+def _read_anthropic_stop(message: Any) -> tuple[str | None, str | None]:
+    """(stop_reason, refusal message) from a Messages API reply.
+
+    The Messages API signals a refusal with ``stop_reason: refusal`` and carries no
+    separate message, so whatever text came with it stands as the refusal."""
+    reason = getattr(message, "stop_reason", None)
+    if not isinstance(reason, str):
+        return None, None
+    if reason != "refusal":
+        return reason, None
+    return reason, _read_anthropic_text(message) or None
 
 
 def _read_usage(usage: Any) -> tuple[int, int, int, int]:

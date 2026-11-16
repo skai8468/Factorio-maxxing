@@ -402,3 +402,84 @@ def test_an_unanswered_request_still_records_its_time(tmp_path):
     requests = [r for r in records if r["type"] == "intervention"]
     assert all(isinstance(r["answer_seconds"], float) for r in requests)
     assert all(r["answer_seconds"] >= 0 for r in requests)
+
+
+# --- refusals (B8, D83) ----------------------------------------------------------------
+
+
+class RefusingClient(StubLLMClient):
+    """Answers normally for ``answer_first`` calls, then every call is refused."""
+
+    def __init__(self, answer_first: int, refusal: str | None = "blocked by policy"):
+        super().__init__(POLICIES)
+        self.answer_first = answer_first
+        self.refusal = refusal
+
+    def generate(self, prompt):
+        response = super().generate(prompt)
+        if self.call_count <= self.answer_first:
+            return response
+        return LLMResponse(
+            text="",
+            model=self.model,
+            input_tokens=response.input_tokens,
+            output_tokens=0,
+            cache_read_tokens=0,
+            cache_write_tokens=0,
+            latency_seconds=0.0,
+            stop_reason="content_filter",
+            refusal=self.refusal,
+        )
+
+
+def run_refused(path, client, **kwargs):
+    with TrajectoryRecorder(path, run_id="run-1") as recorder:
+        result = run_goal(
+            open_ended_goal(6),
+            mining_env(),
+            client,
+            None,
+            NoHuman(),
+            open_ended_detector(3, backstop_steps=20),
+            recorder,
+            **kwargs,
+        )
+    return result, read_trajectory(path)
+
+
+def test_a_refused_policy_call_ends_the_run_without_a_step(tmp_path):
+    """B8: a refusal used to be run as an empty program, step after step."""
+    result, records = run_refused(tmp_path / "run.jsonl", RefusingClient(answer_first=2))
+    assert result.completed is False
+    assert result.steps_used == 2
+    assert result.reason == "model refused: blocked by policy"
+    assert [r["step"] for r in records if r["type"] == "step"] == [0, 1]
+
+
+def test_the_refused_call_is_recorded_and_charged(tmp_path):
+    spend = SpendMeter(50.0)
+    _, records = run_refused(
+        tmp_path / "run.jsonl", RefusingClient(answer_first=0), spend=spend
+    )
+    calls = [r for r in records if r["type"] == "llm_call"]
+    assert len(calls) == 1
+    assert calls[0]["step"] == 0
+    assert calls[0]["stop_reason"] == "content_filter"
+    assert calls[0]["refusal"] == "blocked by policy"
+    assert calls[0]["output_tokens"] == 0
+    assert not [r for r in records if r["type"] == "step"]
+
+
+def test_a_refusal_without_a_message_names_its_stop_reason(tmp_path):
+    result, _ = run_refused(
+        tmp_path / "run.jsonl", RefusingClient(answer_first=0, refusal=None)
+    )
+    assert result.reason == "model refused: stop reason content_filter"
+
+
+def test_a_normal_call_records_no_refusal_fields(tmp_path):
+    """The stub reports no stop reason, so its records keep their old shape."""
+    _, records = run(tmp_path / "run.jsonl")
+    calls = [r for r in records if r["type"] == "llm_call"]
+    assert calls
+    assert not [r for r in calls if "stop_reason" in r or "refusal" in r]

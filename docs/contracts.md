@@ -75,6 +75,9 @@ class LLMResponse:
     cache_write_tokens: int
     latency_seconds: float
     key_id: str | None = None   # "<KEY_ENV>:<8 hex of sha256(key)>", never the key (D56)
+    stop_reason: str | None = None  # provider's finish_reason / stop_reason (D83)
+    refusal: str | None = None      # provider's refusal message, if any (D83)
+    # property refused: refusal given, or stop_reason in {"content_filter", "refusal"}
 
 @dataclass(frozen=True)
 class Prompt:
@@ -241,7 +244,10 @@ as `run_goal(..., spend=meter)` records it, keeps the total in memory, and the l
 the run with `reason="spend ceiling reached"` once `meter.exceeded()` (D68). `llm_call` records carry
 `key_id` - the paying key's fingerprint - whenever the client used a key, and
 `python -m factorio_maxxing.spend` totals the estimate per key across all trajectories
-(D56).
+(D56). They also carry `stop_reason` and `refusal` whenever the provider reported them.
+A refused **policy** call is recorded and charged, and the loop then ends the run with
+`reason="model refused: <message or stop reason>"` before taking that step. A refused
+summarizer call is recorded and charged, and the previous report is kept (B8, D83).
 
 Required consequences:
 
