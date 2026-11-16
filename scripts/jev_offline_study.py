@@ -15,6 +15,7 @@ not drive control flow) or anything after the request.
     python scripts/jev_offline_study.py run --repeats 3
     python scripts/jev_offline_study.py analyse
     python scripts/jev_offline_study.py run --limit 1        # smoke test
+    python scripts/jev_offline_study.py run --run <run_id> --results held-out.jsonl
 """
 
 from __future__ import annotations
@@ -109,10 +110,13 @@ def build_state(steps: dict[int, dict[str, Any]], at: int, goal: str) -> dict[st
     }
 
 
-def load_requests() -> list[dict[str, Any]]:
-    """Every annotated help request with the state rebuilt from its trajectory."""
+def load_requests(runs: list[str] | None = None) -> list[dict[str, Any]]:
+    """Every annotated help request with the state rebuilt from its trajectory,
+    optionally only those of the given runs."""
     requests = []
     for path in sorted(glob.glob(str(ROOT / "annotations" / "*.jsonl"))):
+        if runs and Path(path).stem not in runs:
+            continue
         rows = [json.loads(x) for x in open(path, encoding="utf-8") if x.strip()]
         if not rows:
             continue
@@ -179,14 +183,14 @@ def ask_jev(state: dict[str, Any], key: str) -> dict[str, Any]:
     }
 
 
-def run(repeats: int, limit: int | None) -> int:
+def run(repeats: int, limit: int | None, runs: list[str], results: Path) -> int:
     key = os.environ.get("OPEN_ROUTER_API_KEY")
     if not key:
         print("OPEN_ROUTER_API_KEY is not set", file=sys.stderr)
         return 1
-    requests = load_requests()[: limit or None]
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    with open(RESULTS, "w", encoding="utf-8") as out:
+    requests = load_requests(runs)[: limit or None]
+    results.parent.mkdir(parents=True, exist_ok=True)
+    with open(results, "w", encoding="utf-8") as out:
         for request in requests:
             for repeat in range(repeats):
                 answer = ask_jev(request["state"], key)
@@ -204,15 +208,15 @@ def run(repeats: int, limit: int | None) -> int:
                     f"stuck {p['stuck']:.2f} env {p['environment_fault']:.2f} "
                     f"({answer['seconds']} s)"
                 )
-    print(f"wrote {RESULTS}")
+    print(f"wrote {results}")
     return 0
 
 
 # --- analysis ---------------------------------------------------------------------------
 
 
-def analyse() -> int:
-    rows = [json.loads(x) for x in open(RESULTS, encoding="utf-8") if x.strip()]
+def analyse(results: Path) -> int:
+    rows = [json.loads(x) for x in open(results, encoding="utf-8") if x.strip()]
     by_request: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for row in rows:
         by_request.setdefault((row["run_id"], row["step"]), []).append(row)
@@ -297,11 +301,18 @@ def main(argv: list[str] | None = None) -> int:
     run_parser = sub.add_parser("run", help="ask JEV about every annotated request")
     run_parser.add_argument("--repeats", type=int, default=3)
     run_parser.add_argument("--limit", type=int, default=None)
-    sub.add_parser("analyse", help="compare JEV's answers with the codes")
+    run_parser.add_argument(
+        "--run", action="append", default=[], help="only this run id (repeatable)"
+    )
+    analyse_parser = sub.add_parser("analyse", help="compare JEV's answers with codes")
+    for each in (run_parser, analyse_parser):
+        each.add_argument(
+            "--results", type=Path, default=RESULTS, help=f"default {RESULTS.name}"
+        )
     args = parser.parse_args(argv)
     if args.command == "run":
-        return run(args.repeats, args.limit)
-    return analyse()
+        return run(args.repeats, args.limit, args.run, args.results)
+    return analyse(args.results)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,41 @@
+calls: 45, requests: 15, repeats: 3
+latency: median 0.46 s, max 0.56 s; input tokens per call ~2590
+repeat spread per question: median 0.010, max 0.050
+
+all: 15 requests - 12 E10, 3 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                  12/12         2/3  (E04@19, E03@59)
+  making_progress >= 0.7                  12/12         2/3  (E04@19, E03@59)
+  making_progress >= 0.8                   9/12         2/3  (E04@19, E03@59)
+  making_progress >= 0.9                   5/12         0/3
+  gate: progress >= 0.9 and stuck <= 0.1   5/12         0/3
+  stuck <= 0.1                             9/12         0/3
+  stuck <= 0.3                            12/12         2/3  (E04@19, E03@59)
+
+verified only: 0 requests - 0 E10, 0 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                   0/0          0/0
+  making_progress >= 0.7                   0/0          0/0
+  making_progress >= 0.8                   0/0          0/0
+  making_progress >= 0.9                   0/0          0/0
+  gate: progress >= 0.9 and stuck <= 0.1   0/0          0/0
+  stuck <= 0.1                             0/0          0/0
+  stuck <= 0.3                             0/0          0/0
+
+per request (mean over repeats):
+  8ef037ca step  19 E04*  progress 0.84  stuck 0.24  env 0.07
+  8ef037ca step  39 E02*  progress 0.37  stuck 0.51  env 0.05
+  8ef037ca step  59 E03*  progress 0.89  stuck 0.10  env 0.07
+  8ef037ca step  79 E10*  progress 0.71  stuck 0.21  env 0.10
+  8ef037ca step  99 E10*  progress 0.91  stuck 0.04  env 0.17
+  8ef037ca step 119 E10*  progress 0.93  stuck 0.09  env 0.19
+  8ef037ca step 139 E10*  progress 0.73  stuck 0.13  env 0.15
+  8ef037ca step 159 E10*  progress 0.80  stuck 0.06  env 0.17
+  8ef037ca step 179 E10*  progress 0.88  stuck 0.07  env 0.09
+  8ef037ca step 199 E10*  progress 0.93  stuck 0.08  env 0.08
+  8ef037ca step 219 E10*  progress 0.93  stuck 0.07  env 0.09
+  8ef037ca step 239 E10*  progress 0.79  stuck 0.12  env 0.17
+  8ef037ca step 259 E10*  progress 0.86  stuck 0.05  env 0.13
+  8ef037ca step 279 E10*  progress 0.88  stuck 0.08  env 0.08
+  8ef037ca step 299 E10*  progress 0.91  stuck 0.06  env 0.13
+  (* = draft code, not yet verified)

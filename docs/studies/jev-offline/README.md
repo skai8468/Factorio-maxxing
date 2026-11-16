@@ -60,14 +60,43 @@ On the 21 verified codes alone:
   Input was about 3,400 tokens per call. OpenRouter's guide reports under $0.0001 per
   call; this study's dollar cost is not separated in the key's usage.
 
+## Held-out check: GPT 6 Luna (2026-11-17)
+
+The same questions and the same cut-offs, chosen above and not re-tuned, were applied
+to the 15 help requests of the GPT 6 Luna run `20261116T222832-8ef037ca`. The study had
+never seen this run. It is a different model with a different style of play: hand-mining
+throughout, short programs. Its codes are drafts: 12 E10, plus one each of E04, E02 and
+E03. Output: `held-out-luna.jsonl`, `held-out-luna-analysis.txt`.
+
+| Skip the human when... | E10 filtered | Real problems wrongly filtered |
+|---|---|---|
+| `making_progress >= 0.8` | 9/12 | 2/3 (E04, E03) |
+| `making_progress >= 0.9` | 5/12 | 0/3 |
+| **gate: `making_progress >= 0.9` and `stuck <= 0.1`** | **5/12** | **0/3** |
+| `stuck <= 0.1` | 9/12 | 0/3 |
+
+- **The gate held.** It filtered 42% of false alarms, as in-sample (10 of 24), and passed
+  no real problem. Across both sets it filters 15 of 36 E10s and wrongly filters 0 of
+  15 real problems.
+- **The margin is thin.** The E03 at step 59 scored `making_progress` 0.89 and `stuck`
+  0.10, just inside both cut-offs. It was caught only because both questions had to
+  pass. One real problem passing the threshold on one question alone is the expected
+  failure mode, so the two-question gate is safer than either question alone, despite
+  `stuck <= 0.1` filtering more here.
+- **`making_progress` alone fails again.** At 0.8 it would have let the lab
+  under-gathering (E04) and the locked-research attempt (E03) through.
+- **Smaller state, same stability.** The state was about 2,600 input tokens per call,
+  because Luna writes shorter programs. Repeat spread had a median of 0.010 and a
+  maximum of 0.050.
+
 ## Limits
 
 - **Small and narrow.** 36 requests and 12 real problems, all from one model (Haiku 5.5),
   one cell and one trigger (the backstop). Repeated-error requests and other models are
   untested.
-- **Thresholds chosen in-sample.** The cut-offs were read off this data, so "0 of 12
-  wrongly filtered" is optimistic. They need checking on new runs, such as the GPT 6
-  Luna and new-wording Haiku runs, once those are coded.
+- **Thresholds chosen in-sample.** The cut-offs were read off the Haiku data. The Luna
+  held-out check (above) is the first test on unseen data, and it has only 3 real
+  problems. The new-wording Haiku run is the next test, once it is coded.
 - **15 labels are drafts.** Both misses under `stuck <= 0.1` are on unverified codes.
 - **Same information as the coder.** Codes were drafted from the ~5 steps before each
   request, which is close to what JEV saw. Agreement may be higher than against an
