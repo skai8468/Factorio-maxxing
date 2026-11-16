@@ -2796,3 +2796,43 @@ measurement. Its contents are unchanged. Earlier decisions keep the old name as 
 
 **Unchanged:** the client must still join before a run starts and never leave
 (`fle-integration.md`, D43).
+
+---
+
+## D81 - The closing reminder asks for nothing smaller than FLE does
+
+**Decision (research lead, 2026-11-16).** A follow-up to D78. Measured per step (median
+non-comment lines / game-action calls): Opus 5.5 35 / 9 (5 steps, `20261020T012303-8d5a231c`),
+Haiku 5.5 22 / 3-4 (the two 300-step cell-5 runs), GPT 6 Luna 9 / 1 (`20261116T222832-8ef037ca`,
+first 97 steps). Under an equal 300-step cap, a program that does one thing spends a
+step on it. The closing reminder (`context.POLICY_INSTRUCTIONS`), which D78 kept as
+ours, told the model three things FLE's agent is not told, all pushing towards smaller
+programs:
+
+1. "Work towards the goal one step at a time."
+2. "give a **short** PLANNING note" - FLE asks to "think through each step extensively".
+3. "prefer a small verifiable step over a long script."
+
+All three are removed. The reminder now restates the response format, FLE's closing
+line ("ALWAYS WRITE VALID PYTHON AND REMEMBER MAXIMUM 50 LINES OF CODE PER POLICY",
+without the threat), and FLE's "don't repeat your previous steps - continue from where
+you left off". In `HOW_TO_PLAY`, the PLANNING line regains FLE's "think through each
+step extensively" (it read "think it through in prose"); the rest already carries FLE's
+"small, modular policies, at most 50 lines" and "next step of reasonable size".
+
+**Still different from FLE, by choice or as minor omissions:** the observation guide is
+rewritten for this harness's sections and names HUMAN GUIDANCE (D78); the goal is the
+research lead's (D67); "variables and functions you define persist between steps" is
+stated, which FLE leaves implicit; FLE's "consider entities needed for each step", "use
+appropriate spacing and formatting" and "game speed - use for timing decisions" are
+not carried.
+
+**Not done here:** actively asking for longer, multi-action programs. FLE's agent is not
+told that, so in this experiment it is guidance; it belongs to the specialized harness
+(E2), switchable and tied to a catalogued error category.
+
+**Consequence.** Runs from this commit on use the new reminder, so they are not directly
+comparable with earlier runs on program size. The GPT 6 Luna run in progress
+(`20261116T222832-8ef037ca`) loaded the old reminder and finishes on it, which keeps it
+comparable with the D78 Haiku run (`20261021T193258-2cd7aa8c`). A longer plan may raise
+output tokens per step.

@@ -30,7 +30,7 @@ step you send one program. It runs in the game, and you then see what it printed
 how the game changed. Variables and functions you define persist between steps.
 
 Response format:
-1. PLANNING - think it through in prose:
+1. PLANNING - think through each step extensively in prose:
    - State: what is the current game state? What resources and entities do you have?
    - Next step: what is the most useful next step of reasonable size, and why?
    - Actions: what specific actions does it need, and what resources do they require?
@@ -66,12 +66,14 @@ Factorio tips:
 nothing is added that FLE's agent is not told (D78). Stable across a run, so they sit
 in the cached part beside the API reference."""
 
-POLICY_INSTRUCTIONS = """Work towards the goal one step at a time.
-First give a short PLANNING note: what you will do next, and why.
-Then give exactly one fenced python block containing only the code to run now.
-Keep the code under 50 lines, and prefer a small verifiable step over a long script.
-Do not repeat steps that have already succeeded."""
-"""The closing reminder: the response format, restated where the model reads last."""
+POLICY_INSTRUCTIONS = """First give your PLANNING, then exactly one fenced python block
+containing only the code to run now.
+Always write valid Python, and remember: at most 50 lines of code per program.
+Do not repeat steps that have already succeeded - continue from where you left off."""
+"""The closing reminder: the response format, restated where the model reads last. It
+restates FLE's own closing line ("ALWAYS WRITE VALID PYTHON AND REMEMBER MAXIMUM 50
+LINES OF CODE PER POLICY") without the threat, and adds no advice on program size that
+FLE's agent is not given (D81)."""
 
 
 def build_prompt(

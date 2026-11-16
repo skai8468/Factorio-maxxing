@@ -254,9 +254,21 @@ def test_the_standing_instructions_keep_fles_wording():
         "Avoid breaking existing automated structures",
         "preserve working automated structures",
         "at most 50 lines",
+        "think through each step extensively",
         "Use transport belts to keep burner machines fed with coal.",
         "Fuel boilers manually.",
     ):
         assert phrase in HOW_TO_PLAY, phrase
     assert "move first" not in HOW_TO_PLAY
     assert "reach things close to you" not in HOW_TO_PLAY
+
+
+def test_the_closing_reminder_adds_no_advice_on_program_size():
+    """D81: FLE caps a program at 50 lines but never asks for small steps or a short
+    plan, so the closing reminder does not either."""
+    from factorio_maxxing.context import POLICY_INSTRUCTIONS
+
+    assert "at most 50 lines" in POLICY_INSTRUCTIONS
+    assert "valid Python" in POLICY_INSTRUCTIONS
+    for phrase in ("small verifiable step", "long script", "one step at a time", "short"):
+        assert phrase not in POLICY_INSTRUCTIONS, phrase
