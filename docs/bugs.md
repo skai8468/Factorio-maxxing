@@ -121,3 +121,31 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
   truncated. Tests cover a >64 KiB record followed by a small one.
 - **Status:** fixed (from the next run on).
 
+
+## B8 - A provider refusal was recorded as an empty step
+
+- **Found:** 2026-11-17, cell-1 Opus run `20261117T004333-d8b88453`, the first run
+  after the freeze (D82), while watching it.
+- **Component:** harness (`llm.APIClient`, OpenRouter route) and the provider.
+- **Symptom:** the step count rose, but the agent never acted. Every policy call
+  returned 0 output tokens, and every step had an empty program. The summarizer's
+  calls, which use a short prompt, returned text.
+- **Cause:** Opus 5.5 refused the policy prompt (~127K characters: instructions plus
+  API reference) with `finish_reason: content_filter` and the refusal "blocked as it
+  seems to violate Anthropic's Terms of Service restrictions on reverse engineering or
+  duplicating model outputs". This was reproduced on Amazon Bedrock and on Google
+  Vertex. The same prompt shape with a short text passes, so it is a false positive on
+  the full prompt. OpenRouter cannot route to Anthropic's own endpoint for this account,
+  because the account's zero-data-retention setting excludes it, which leaves only
+  those two. Haiku 5.5 and GPT 6 Luna never refused the same prompt. The harness reads
+  only `message.content`, so a refusal arrived as an empty reply and was recorded as a
+  step with no code.
+- **Data effect:** that run's 32 steps are void: no action was taken, and it cost
+  ~$0.86. It is not grid data. No earlier run has a policy call with 0 output tokens.
+- **Fix:** not yet. The harness should record `finish_reason` and any refusal, and stop
+  the run on a refusal instead of spending steps. That is a harness change after the
+  freeze, so it needs the research lead's decision (a new harness version). Running Opus
+  needs a route that accepts the prompt, which is untested:
+  - Anthropic's own endpoint, either through OpenRouter with ZDR relaxed for it, or
+    direct with a valid Anthropic key. The key in `~/fle-work/.env.local` returns 401.
+- **Status:** open.
