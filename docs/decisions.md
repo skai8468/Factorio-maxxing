@@ -2777,3 +2777,22 @@ already a secondary metric (build-plan 5); it is now computed and shown.
 Shown by the Scorer CLI (`research: 19 technologies, 1,137 units` for this run), the
 panel's research line, and the progress line.
 
+
+---
+
+## D80 - Measured runs are the demo; `live-watchable` is renamed slow mode
+
+**Decision (research lead, 2026-11-16).** The two cell-5 screen recordings
+(`factorio-cell5-20261021-172416.mp4` of `20261021T172150-ba5dcf0a`, and
+`factorio-cell5-d78-20261021-193333.mp4` of `20261021T193258-2cd7aa8c`) were made with
+the grid config's measured settings - pause after each action on, FLE's default game
+speed, fast mode on - and are good enough as the demo. A watched demo therefore runs a
+grid-cell config unchanged, so what is shown is a run that counts.
+
+`configs/live-watchable.json` is renamed `configs/slow-mode.json`, since it is no longer
+the only way to watch: it is the optional config for watching at human speed (pause off,
+`game_speed` 1, `fast_mode` false - D36, D46, D48), and remains a demonstration, not a
+measurement. Its contents are unchanged. Earlier decisions keep the old name as written.
+
+**Unchanged:** the client must still join before a run starts and never leave
+(`fle-integration.md`, D43).

@@ -280,16 +280,19 @@ terminal is the one that holds WSL up.
    `localhost` work; the VM-IP instructions above are only needed without it. Confirm
    with `docker logs cluster-factorio_0-1 2>&1 | grep JOIN`.
 
-3. **Start the run**, in a second WSL terminal. `configs/live-watchable.json` sets the
-   three things a watched run needs: `"pause_after_action": false`, since a paused
-   game is what dropped the client in D38; `"game_speed": 1`, since FLE's own 10x is
-   more than the server can simulate and the client falls behind until it reports the
-   server as not responding (D46); and `"fast_mode": false`, FLE's slow mode, so the
-   agent walks instead of teleporting (D48). None of these is for a measured run. The
-   run needs `.env.local` for its API key and sprite path:
+3. **Start the run**, in a second WSL terminal. A grid-cell config
+   (`configs/grid/cell-*.json`) is watched and recorded as it is: both cell-5
+   recordings were made with the measured settings, and they are the demo (D80).
+   `configs/slow-mode.json` is the optional alternative for watching at human speed. It
+   sets `"pause_after_action": false`, since a paused game is what dropped the client in
+   D38; `"game_speed": 1`, since FLE's own 10x is more than the server can simulate and
+   the client falls behind until it reports the server as not responding (D46); and
+   `"fast_mode": false`, FLE's slow mode, so the agent walks instead of teleporting
+   (D48). None of these is for a measured run. The run needs `.env.local` for its API
+   key and sprite path:
 
    ```bash
-   source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."
+   source ~/fle-work/.env.local && cd /mnt/c/Users/leong/dev/Factorio-maxxing && ~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/slow-mode.json --goal "..."
    ```
 
 Further runs can follow in the same session without rejoining; each reset makes a new
@@ -755,10 +758,10 @@ export FLE_SPRITES_DIR=$HOME/fle-work/.fle/sprites
 ```
 
 **Then run with rendering on**, either via `--vision` or the `enable_vision` key that
-`configs/live-watchable.json` already sets:
+`configs/slow-mode.json` already sets:
 
 ```bash
-~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/live-watchable.json --goal "..."
+~/venvs/fle/bin/python -m factorio_maxxing.run --config configs/slow-mode.json --goal "..."
 ```
 
 **Extract the frames and assemble them.** `extract_map_images` writes `step-NNNN.png`

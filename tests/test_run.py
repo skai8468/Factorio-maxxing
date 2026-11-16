@@ -325,9 +325,10 @@ def test_an_absent_no_pause_flag_does_not_override_a_config_file(tmp_path):
     assert config.pause_after_action is True
 
 
-def test_the_watchable_config_is_live_unpaused_and_slower_to_ask(tmp_path):
-    """The demonstration config: a longer goal, and it does not ask every 3 steps."""
-    data = json.loads(Path("configs/live-watchable.json").read_text(encoding="utf-8"))
+def test_the_slow_mode_config_is_live_unpaused_and_slower_to_ask(tmp_path):
+    """Slow mode (D80): unpaused, real-time, walking; a longer goal, and it does not
+    ask every 3 steps."""
+    data = json.loads(Path("configs/slow-mode.json").read_text(encoding="utf-8"))
     assert set(data) == {field.name for field in fields(Config)}
 
     config = Config(**data)
