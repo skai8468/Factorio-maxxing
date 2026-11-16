@@ -2840,3 +2840,20 @@ comparable with earlier runs on program size. The GPT 6 Luna run in progress
 (`20261116T222832-8ef037ca`) loaded the old reminder and finishes on it, which keeps it
 comparable with the D78 Haiku run (`20261021T193258-2cd7aa8c`). A longer plan may raise
 output tokens per step.
+
+---
+
+## D82 - The standard harness is frozen
+
+**Decision (research lead, 2026-11-17).** The standard harness is frozen as the tag
+`standard-harness-v1`, on the commit that records this decision. Its harness code
+(`factorio_maxxing/`, `configs/`, `tests/`, `pyproject.toml`) is identical to `1f206ec`:
+the commits after it only add the JEV study and data. A grid run should name a commit
+with this harness code and `dirty: false` (D70).
+
+- **What changes now:** runs from here on are post-freeze, so their stuck events are
+  grid data once verified (D74).
+- **What does not change:** any change to the standard harness after the tag is a new
+  version, not an edit. Specialized-harness features still wait for E2.
+- **The new-wording Haiku run** (`20261116T231731-65398af8`, cell 5) started on
+  `1f206ec` before the tag. It ran the frozen harness code.
