@@ -148,4 +148,14 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
   needs a route that accepts the prompt, which is untested:
   - Anthropic's own endpoint, either through OpenRouter with ZDR relaxed for it, or
     direct with a valid Anthropic key. The key in `~/fle-work/.env.local` returns 401.
+- **Other models (2026-11-17).** The same step-1 prompt was sent once through
+  OpenRouter to each of these candidates. A model "accepts" when it answered with a
+  python block.
+  - **Refused (`content_filter`):** `anthropic/claude-opus-5` and
+    `anthropic/claude-sonnet-5.5`.
+  - **Accepted:** `anthropic/claude-opus-4.8`, `openai/gpt-6-astra`,
+    `openai/gpt-6.1-sol`, `google/gemini-4-argon` and `meta/muse-wonder`.
+  - **Not available:** `google/gemini-4-carbon` is "banned" for this key (403).
+
+  One accepted call does not show that every later step will be accepted.
 - **Status:** open.
