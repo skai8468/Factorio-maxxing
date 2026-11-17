@@ -186,3 +186,23 @@ marked *pre-freeze* so grid analysis can exclude them. Design decisions stay in
 - **Fix:** none in the frozen harness. Worth reporting upstream. The specialized harness
   (E2) could target it if it recurs in the catalogue.
 - **Status:** open.
+
+## B10 - Runs recorded `dirty: true` because of line endings only
+
+- **Found:** 2026-11-17, on the GPT 6 Astra cell-1 run `20261117T171047-6a8934eb`.
+- **Component:** tooling (editing files from Windows) and `run.py`'s code record (D70).
+- **Symptom:** the run's `run` record said `"dirty": true` on commit `c5ca072`, although
+  Windows git reported a clean tree.
+- **Cause:** eight tracked files had been rewritten on Windows with CRLF line endings.
+  Windows git (`core.autocrlf=input`) ignores the difference. The run's
+  `git status` runs in WSL, which has no such setting, so it reported them as
+  modified. With line endings ignored (`git diff --ignore-cr-at-eol`) there was no
+  difference: the run used exactly the code of `c5ca072`, which is
+  `standard-harness-v1.2` plus docs and data.
+- **Data effect:** that one run's `dirty` flag is a false positive. Its harness code is
+  `standard-harness-v1.2`, and it is valid grid data.
+- **Fix:** the files were converted to LF and the index refreshed. Both gits now see a
+  clean tree. To avoid it: write files with `\n` line endings (for example
+  `newline="\n"` in Python on Windows), and check `git status` from WSL before a grid
+  run.
+- **Status:** fixed (for the next run).
