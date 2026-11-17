@@ -314,7 +314,7 @@ One JSON object per stuck event in `annotations/<run_id>.jsonl`, keys in this or
 - *From the Scorer:* `unstuck` - `yes` if a milestone is first reached at a step in
   `(step, step + unstuck_k]`, else `n/a` if the run's last step is before `step +
   unstuck_k`, else `no` - stamped with `ladder_version`.
-- *From the annotator:* `grid_cell` (`1`-`8`, `5'`-`8'` or `pilot`), `harness`
+- *From the annotator:* `grid_cell` (`1`-`8`, `1'`-`8'` or `pilot`), `harness`
   (`standard` / `specialized`), `human`, the codes (`E01`-`E10`, `G1`-`G5`, codebook v0),
   notes, `annotator` and `verified_by` - null for a draft, the verifier's name once
   checked (D74); `unverified(rows)` lists the steps still awaiting it. With no guidance
@@ -373,7 +373,7 @@ governs repeated errors, `non_done_threshold` consecutive non-DONE verdicts. `nu
 `non_done_threshold` and `max_interventions_without_progress` have no effect.
 `backstop_steps` is its stuck backstop (D67).
 
-`grid_cell` labels a grid run (`1`-`8`, `5'`-`8'`, `pilot`, or `""` outside the grid)
+`grid_cell` labels a grid run (`1`-`8`, `1'`-`8'`, `pilot`, or `""` outside the grid)
 and `harness` names its harness (`standard`; `specialized` is refused until E2). Neither
 changes the run; both reach the `run` record. The grid's configs are
 `configs/grid/cell-*.json` (D70).

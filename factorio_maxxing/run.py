@@ -374,7 +374,7 @@ def check_grid(config: Config) -> None:
     """Refuse a grid cell or harness the experiment does not have (D70)."""
     if config.grid_cell and not GRID_CELL.match(config.grid_cell):
         raise ConfigError(
-            f"unknown grid cell {config.grid_cell!r}: use 1-8, 5'-8' or pilot"
+            f"unknown grid cell {config.grid_cell!r}: use 1-8, 1'-8' or pilot"
         )
     if config.harness not in HARNESSES:
         raise ConfigError(f"unknown harness {config.harness!r}")

@@ -3,8 +3,9 @@ annotations so the two cannot disagree about what a cell or a harness is called.
 
 import re
 
-GRID_CELL = re.compile(r"^(?:[1-8]|[5-8]'|pilot)$")
-"""Runs 1-8, the second budget model's 5'-8' (D64), or a pilot run."""
+GRID_CELL = re.compile(r"^(?:[1-8]'?|pilot)$")
+"""Runs 1-8 (GPT 6 Astra, Claude Haiku 5.5), the primed rows 1'-4' (GPT 6.1 Sol) and
+5'-8' (GPT 6 Luna) (D64, D86), or a pilot run."""
 
 HARNESSES = ("standard", "specialized")
 BUILT_HARNESSES = ("standard",)

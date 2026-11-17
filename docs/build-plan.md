@@ -19,9 +19,12 @@ The evaluation grid (§5a) splits the thesis into three measurable questions:
 
 | | Question | Comparison |
 |---|---|---|
-| (a) | How large is the gap between a frontier and a budget model? | run 1 vs run 5 |
-| (b) | **Does human guidance close it?** — the headline | runs 6, 7 vs run 1 |
-| (c) | Can harness engineering substitute for the human? | run 8 vs runs 6 and 1 · run 4 vs run 2 |
+| (a) | How large is the gap between the frontier benchmark and cheaper models? | runs 1' and 5' vs benchmark 1 (Astra) |
+| (b) | **How much human guidance closes it?** — the headline | runs 2', 3' and 6', 7' vs benchmark 1 |
+| (c) | Can harness engineering substitute for the human? | runs 4', 8' vs runs 2', 6' and benchmark 1 |
+
+The rows are GPT 6.1 Sol (1'-4') and GPT 6 Luna (5'-8'); GPT 6 Astra (cell 1) and Claude
+Haiku 5.5 (cell 5) are single benchmark runs (D86).
 
 **Why the environment is hard.** FLE's leaderboard, at 5000 autonomous steps:
 
@@ -82,9 +85,9 @@ point only where genuinely necessary; do not build a phase before its turn.
 | **M0** ✓ | Autonomous loop | Goal → policy → Python → FLE → observation → verification | — |
 | **M1** ✓ | Human rescue | + stuck detection → human guidance → policy continues | — |
 | **E0** | Eval scaffolding | Open-ended goal ("progress as far as you can") · objective milestone **Scorer** · **300-step cap and $75 spend ceiling** (D65, D85) · annotation schema · one run config per grid cell | A live run stops at its cap and its milestones are scored from recorded state |
-| **E1** | Standard-harness pilot | Runs 1, 2, 5, 6 at small n · first error catalogue · codebook v1 · guidance protocol in use | Every stuck event in the pilot is annotated |
+| **E1** | Standard-harness pilot | Runs 1', 2', 5', 6' at small n, plus the benchmarks 1 and 5 (D86) · first error catalogue · codebook v1 · guidance protocol in use | Every stuck event in the pilot is annotated |
 | **E2** | Specialized harness | Features chosen from the E1 catalogue, each switchable | Each feature has tests and a pilot run |
-| **E3** | Full grid | All 8 runs × n seeds | Every run recorded and annotated |
+| **E3** | Full grid | All 8 runs (1'-8') × n seeds | Every run recorded and annotated |
 | **E4** | Analysis | Gap closure · catalogue write-up · cost and human-effort tables | Results tables regenerate from trajectories and annotations |
 
 **M1 was the first meaningful research system**; E0–E4 turn it into the experiment.
@@ -105,16 +108,20 @@ milestone.
 requested vs answered · characters of guidance · guidance category · human time per
 answer.
 
-**Headline — gap closure**, on highest milestone:
+**Headline — gap closure** against the Astra benchmark (D86). **Provisional:** whether
+it is measured on highest milestone or on automation is decided by the research lead
+after the first Sol and Luna runs.
 
 ```
-gap closure = (budget model with human − budget model alone)
-            / (frontier model alone − budget model alone)
-            = (run 6 or 7 − run 5) / (run 1 − run 5)
+gap closure = (cheaper model with help − cheaper model alone)
+            / (Astra benchmark − cheaper model alone)
+            = (run 2', 3' or 4' − run 1') / (run 1 − run 1')   for Sol
+            = (run 6', 7' or 8' − run 5') / (run 1 − run 5')   for Luna
 ```
 
-1.0 means the budget model with guidance matches the frontier model without it; above
-1.0, it exceeds it. Undefined when run 1 ≤ run 5 — itself a reportable result.
+1.0 means the cheaper model with help matches Astra without it; above 1.0, it exceeds
+it. Undefined when the cheaper model alone already matches Astra — itself a reportable
+result.
 
 Capability and assistance are always read as a pair: an agent needing zero
 interventions but making no progress is not better than one needing several and
@@ -132,11 +139,14 @@ error taxonomy (assertion / code / environment).
 
 | | Standard, no human | Standard + human | Specialized + human | Specialized, no human |
 |---|---|---|---|---|
-| **Frontier model** | 1 | 2 | 3 | 4 |
-| **Budget model** | 5 | 6 | 7 | 8 |
+| **GPT 6.1 Sol** | 1' | 2' | 3' | 4' |
+| **GPT 6 Luna** | 5' | 6' | 7' | 8' |
 
-With two budget models (D64) the budget row is repeated for each: runs 5-8 for Haiku 5.5
-and 5'-8' for GPT 6 Luna.
+**Benchmarks (D86)**, one run each, standard harness, no human: **GPT 6 Astra** (cell
+1, run `20261117T171047-6a8934eb`) and **Claude Haiku 5.5** (cell 5). An Astra
+specialized-harness run (cell 3 or 4) happens only if funds remain at the end, capped
+at $75. Unprimed cells 2-4 and 6-8 are otherwise unused; earlier designs (D64, D84) had
+full Astra and Haiku rows.
 
 - **Standard harness** = the M1 harness upgraded with the strengths of FLE's published
   agent (`GymAgent`), written in this repository rather than imported (D66): FLE-style
@@ -159,18 +169,18 @@ and 5'-8' for GPT 6 Luna.
 - **Same world and starting inventory** across every run: FLE ignores a reset seed, so
   the world is the cluster's scenario map, and a "seed" is a repeat run. Every run starts
   **empty-handed**, as FLE's `open_play` does (D70).
-- **Configs:** `configs/grid/cell-*.json`, one per cell - today the six standard cells
-  (1, 2, 5, 6, 5', 6'); 3, 4, 7, 8 arrive with the E2 harness. Cells differ only in model,
+- **Configs:** `configs/grid/cell-*.json`, one per cell - today the standard grid cells
+  (1', 2', 5', 6') and the two benchmarks (1, 5); 3', 4', 7', 8' arrive with the E2
+  harness. Cells differ only in model,
   human backend and label; a test enforces it. Each run's trajectory opens with a `run`
   record of its full config and commit (D70).
 - Further models are further rows; the grid does not change shape.
-- **Models (D64, D84), all through OpenRouter (D77):** frontier **GPT 6 Astra**; budget
-  **GPT 6 Luna** (its own family's budget tier; cells 5', 6') and **Claude Haiku 5.5**
-  (cells 5, 6) - two budget rows, so the grid has 12 cells per seed. Opus 5.5 was the
+- **Models (D64, D84, D86), all through OpenRouter (D77):** grid rows **GPT 6.1 Sol**
+  (middle tier, ~$25 per 300-step run estimated) and **GPT 6 Luna** (budget tier, ~$1);
+  benchmarks **GPT 6 Astra** (frontier) and **Claude Haiku 5.5**. Opus 5.5 was the
   frontier model until its provider refused the prompt (B8, D84).
-- **Seeds (D65):** the frontier model runs **one seed** (4 runs, ~$48 each estimated
-  for Astra, under the $75 ceiling - D85), for budget reasons. **TBD — research lead:** seeds for the budget models (cheap, ~$1 per run;
-  ≥3 recommended).
+- **Seeds (D65, D86):** each benchmark is **one run**. **TBD — research lead:** seeds
+  for Sol and Luna (≥3 recommended for Luna at ~$1 a run).
 
 ## 5b. Error and guidance catalogue
 

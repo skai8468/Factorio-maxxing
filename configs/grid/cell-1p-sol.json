@@ -1,7 +1,7 @@
 {
-  "policy_model": "open-router-openai/gpt-6-astra",
-  "verifier_model": "open-router-openai/gpt-6-astra",
-  "human": "panel",
+  "policy_model": "open-router-openai/gpt-6.1-sol",
+  "verifier_model": "open-router-openai/gpt-6.1-sol",
+  "human": "none",
   "stuck_detector": "consecutive_failures+error_signature",
   "stuck_threshold": 3,
   "non_done_threshold": null,
@@ -25,6 +25,6 @@
   "trajectory_dir": "trajectories",
   "dump_prompts": "",
   "api_reference": "configs/fle_api_reference.md",
-  "grid_cell": "2",
+  "grid_cell": "1'",
   "harness": "standard"
 }

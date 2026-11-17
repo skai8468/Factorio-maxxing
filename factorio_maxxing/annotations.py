@@ -235,7 +235,7 @@ def _row_problems(row: Mapping[str, Any]) -> list[str]:
         problems.append("step must be a non-negative integer")
     if not GRID_CELL.match(str(row["grid_cell"] or "")):
         problems.append(
-            f"grid cell must be 1-8, 5'-8' or pilot, not {row['grid_cell']!r}"
+            f"grid cell must be 1-8, 1'-8' or pilot, not {row['grid_cell']!r}"
         )
     if row["harness"] not in HARNESSES:
         problems.append(f"harness must be one of {', '.join(HARNESSES)}")

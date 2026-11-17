@@ -6,8 +6,10 @@ Human-Assisted Factorio Harness (FYP).
 frontier-model performance in Factorio, and how much of that guidance can harness
 engineering replace? (Changed 2026-10-16 — `docs/decisions.md` D60.)
 
-Evaluation: a 2×2×2 grid — frontier vs budget model × standard vs specialized harness ×
-with vs without human guidance — at an equal 300-step cap per run (D65), plus a catalogue
+Evaluation: a 2×2×2 grid — GPT 6.1 Sol vs GPT 6 Luna × standard vs specialized harness ×
+with vs without human guidance — measured against single benchmark runs of GPT 6 Astra
+(frontier) and Claude Haiku 5.5 (D86), at an equal 300-step cap and a $75 maximum per
+run (D65, D85), plus a catalogue
 of stuck-time errors and the guidance that resolved them. See `docs/build-plan.md` §5a–5d.
 
 ## Source of truth (highest first)

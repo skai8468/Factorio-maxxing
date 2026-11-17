@@ -900,9 +900,10 @@ def grid_configs():
 
 
 def test_the_grid_has_one_config_per_standard_cell():
-    """D70: the six standard cells now; 3, 4, 7, 8 arrive with the E2 harness."""
+    """D86: the Sol and Luna standard cells plus the Astra and Haiku benchmarks; the
+    specialized cells arrive with the E2 harness."""
     cells = {config.grid_cell for config in grid_configs().values()}
-    assert cells == {"1", "2", "5", "6", "5'", "6'"}
+    assert cells == {"1", "5", "1'", "2'", "5'", "6'"}
 
 
 def test_grid_cells_differ_only_in_model_and_human():
@@ -917,10 +918,10 @@ def test_grid_cells_differ_only_in_model_and_human():
 @pytest.mark.parametrize(
     ("cell", "model", "human"),
     [
-        ("1", "open-router-openai/gpt-6-astra", "none"),  # D84
-        ("2", "open-router-openai/gpt-6-astra", "panel"),
-        ("5", "open-router-anthropic/claude-haiku-5.5", "none"),
-        ("6", "open-router-anthropic/claude-haiku-5.5", "panel"),
+        ("1", "open-router-openai/gpt-6-astra", "none"),  # D84, benchmark (D86)
+        ("5", "open-router-anthropic/claude-haiku-5.5", "none"),  # benchmark (D86)
+        ("1'", "open-router-openai/gpt-6.1-sol", "none"),  # D86
+        ("2'", "open-router-openai/gpt-6.1-sol", "panel"),
         ("5'", "open-router-openai/gpt-6-luna", "none"),
         ("6'", "open-router-openai/gpt-6-luna", "panel"),
     ],
@@ -961,12 +962,12 @@ def test_grid_file_names_carry_the_cell():
         assert name.startswith(f"cell-{config.grid_cell.replace(chr(39), 'p')}-")
 
 
-@pytest.mark.parametrize("cell", ["", "1", "8", "5'", "8'", "pilot"])
+@pytest.mark.parametrize("cell", ["", "1", "8", "1'", "4'", "5'", "8'", "pilot"])
 def test_grid_cells_are_accepted(cell):
     check_grid(Config(grid_cell=cell))
 
 
-@pytest.mark.parametrize("cell", ["9", "0", "4'", "cell-1"])
+@pytest.mark.parametrize("cell", ["9", "0", "9'", "0'", "1''", "cell-1"])
 def test_an_unknown_grid_cell_is_refused(cell):
     with pytest.raises(ConfigError, match="unknown grid cell"):
         check_grid(Config(grid_cell=cell))

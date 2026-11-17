@@ -2932,3 +2932,54 @@ in model and human (D70). For the budget cells (about $1 a run) it changes nothi
 The ceiling is still a safety net, not a budget: cost is an outcome, reported per run.
 `Config`'s default and the non-grid configs stay at $50. Revisit once the first Astra
 run gives a measured cost ("for now", in the research lead's words).
+
+---
+
+## D86 - The grid moves to GPT 6.1 Sol and GPT 6 Luna; Astra and Haiku are benchmarks
+
+**Decision (research lead, 2026-11-17).** It replaces D84's grid of Astra, Haiku and Luna
+rows. In the research lead's words, the grid will "show how much help sol/luna will
+need to exceed" Astra, "with standard harness or w special harness", and "astra/haiku
+will be separate as a benchmark to be compared".
+
+- **The grid is two rows of four cells.** GPT 6.1 Sol
+  (`open-router-openai/gpt-6.1-sol`) is cells 1'-4', and GPT 6 Luna is cells 5'-8'. Both
+  are GPT 6 family, with Astra on top: Sol is the middle tier at a fifth of Astra's
+  price, and Luna is the budget tier at a hundredth. The columns are unchanged: standard
+  with no human, standard with a human, specialized with a human, specialized with no
+  human.
+- **GPT 6 Astra is the benchmark, at one run** under the standard harness with no human:
+  cell 1, run `20261117T171047-6a8934eb`. It ended on the $75 ceiling at step 185.
+  **Claude Haiku 5.5 is a second benchmark** (cell 5).
+- **$75 is the maximum for any run** (D85), Sol's and Luna's included.
+- **An Astra specialized-harness run happens only if funds remain** after the grid, and
+  is also capped at $75. Its cell (3 or 4) is chosen then.
+- **TBD - research lead: what "exceeding" Astra means.** It will most likely be measured
+  on automation or milestones. It is confirmed only after the first Luna and Sol runs
+  exist, and until then the headline metric (build-plan 5) is provisional.
+- **TBD - research lead: seeds** for Sol and Luna.
+
+**Implementation (Claude, 2026-11-17).**
+
+- **Labels.** Sol takes the primed row 1'-4', so every recorded run keeps its label:
+  Astra stays cell 1, Haiku cell 5, and Luna 5'. `grid.GRID_CELL` now accepts `1'`-`8'`.
+- **Configs.** `configs/grid/` holds the Sol cells (`cell-1p-sol.json`,
+  `cell-2p-sol-human.json`), the Luna cells (5', 6') and the two benchmarks (1, 5). The
+  test that cells differ only in model, human and label covers the benchmarks too, so
+  they stay comparable. `cell-2-astra-human.json` and `cell-6-haiku-human.json` are
+  removed, because neither benchmark has a human cell (they remain in git history). The
+  specialized cells (3'/4', 7'/8') arrive with the E2 harness.
+- **Price.** OpenRouter lists Sol at $2 input, $10 output, $0.10 cache read and $2.50
+  cache write per million tokens (models API, 2026-11-17), now in the pricing table.
+  Astra's run cost about $0.40 a step, so at a fifth of the price a 300-step Sol run is
+  estimated at about $25 if its token use is like Astra's. Sol accepted the step-1
+  prompt (B8).
+- **Which benchmark runs count.** Astra's cell-1 run ran on `standard-harness-v1.2` code
+  (its dirty flag is B10). The new-wording Haiku run `20261116T231731-65398af8` ran on
+  code inside `standard-harness-v1`; the only later harness change is v1.1's refusal
+  handling, which Haiku never triggered. It can therefore serve as the Haiku benchmark
+  unless the research lead wants a fresh one.
+- **Superseded.** The Claude-as-helper Haiku run (on hold) has no cell in this design.
+
+**Version.** The grid configs, the cell pattern and the pricing table change; harness
+behaviour does not. Tagged `standard-harness-v1.3`.

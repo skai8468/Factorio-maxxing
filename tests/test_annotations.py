@@ -348,8 +348,8 @@ def test_codes_given_for_guidance_that_never_came_are_reported():
     ]
 
 
-@pytest.mark.parametrize("grid_cell", ["1", "8", "5'", "8'", "pilot"])
-def test_grid_cells_cover_both_budget_rows_and_pilots(grid_cell):
+@pytest.mark.parametrize("grid_cell", ["1", "8", "1'", "4'", "5'", "8'", "pilot"])
+def test_grid_cells_cover_every_row_and_pilots(grid_cell):
     assert validate([row(unstuck="yes", grid_cell=grid_cell), declined()], FACTS) == []
 
 

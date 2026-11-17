@@ -215,3 +215,10 @@ def test_gpt_6_astra_is_priced_through_openrouter():
     assert has_price("open-router-openai/gpt-6-astra")
     cost = call_cost(_call("open-router-openai/gpt-6-astra", 10_000, 1_000))
     assert cost == pytest.approx(10_000 * 10.00 / 1e6 + 1_000 * 50.00 / 1e6)
+
+
+def test_gpt_6_1_sol_is_priced_through_openrouter():
+    """D86: the grid's upper row has a price; OpenRouter's dotted version is mapped."""
+    assert has_price("open-router-openai/gpt-6.1-sol")
+    cost = call_cost(_call("open-router-openai/gpt-6.1-sol", 10_000, 1_000))
+    assert cost == pytest.approx(10_000 * 2.00 / 1e6 + 1_000 * 10.00 / 1e6)

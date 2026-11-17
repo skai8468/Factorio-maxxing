@@ -46,7 +46,8 @@ API reference, cached 2026-10-06); OpenRouter lists the same per-token prices fo
 (D54) and its own fees are not modelled. GPT 6 Luna's rates are OpenRouter's listing for
 ``openai/gpt-6-luna`` (models API, 2026-10-20), matching third-party pages (D64, D66).
 GPT 6 Astra's are OpenRouter's listing for ``openai/gpt-6-astra`` (models API,
-2026-11-17; D84)."""
+2026-11-17; D84), and GPT 6.1 Sol's for ``openai/gpt-6.1-sol`` (models API, 2026-11-17;
+D86)."""
 
 PRICES: dict[str, Price] = {
     "claude-haiku-4-5": Price(input=1.00, output=5.00, cache_read=0.10, cache_write=1.25),
@@ -71,6 +72,8 @@ PRICES: dict[str, Price] = {
     ),
     "gpt-6-luna": Price(input=0.10, output=0.50, cache_read=0.01, cache_write=0.125),
     "gpt-6-astra": Price(input=10.00, output=50.00, cache_read=1.00, cache_write=12.50),
+    # Inputs above 272K tokens are billed at a higher rate; runs stay far below it.
+    "gpt-6-1-sol": Price(input=2.00, output=10.00, cache_read=0.10, cache_write=2.50),
 }
 
 ROLES = ("policy", "verifier")
