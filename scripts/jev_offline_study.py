@@ -16,6 +16,10 @@ not drive control flow) or anything after the request.
     python scripts/jev_offline_study.py analyse
     python scripts/jev_offline_study.py run --limit 1        # smoke test
     python scripts/jev_offline_study.py run --run <run_id> --results held-out.jsonl
+    python scripts/jev_offline_study.py analyse --results a.jsonl --results b.jsonl
+
+``analyse`` takes each request's code and verification from the current annotations,
+so results recorded before a draft code was verified are scored on the verified one.
 """
 
 from __future__ import annotations
@@ -215,8 +219,30 @@ def run(repeats: int, limit: int | None, runs: list[str], results: Path) -> int:
 # --- analysis ---------------------------------------------------------------------------
 
 
-def analyse(results: Path) -> int:
-    rows = [json.loads(x) for x in open(results, encoding="utf-8") if x.strip()]
+def current_labels() -> dict[tuple[str, int], tuple[str, bool]]:
+    """(run, step) -> (code, verified) from the annotations as they are now."""
+    labels = {}
+    for path in glob.glob(str(ROOT / "annotations" / "*.jsonl")):
+        for line in open(path, encoding="utf-8"):
+            if line.strip():
+                row = json.loads(line)
+                labels[(row["run_id"], row["step"])] = (
+                    row["error_category"],
+                    bool(row.get("verified_by")),
+                )
+    return labels
+
+
+def analyse(results: list[Path]) -> int:
+    rows = [
+        json.loads(x)
+        for path in results
+        for x in open(path, encoding="utf-8")
+        if x.strip()
+    ]
+    labels = current_labels()
+    for row in rows:
+        row["code"], row["verified"] = labels[(row["run_id"], row["step"])]
     by_request: dict[tuple[str, int], list[dict[str, Any]]] = {}
     for row in rows:
         by_request.setdefault((row["run_id"], row["step"]), []).append(row)
@@ -271,6 +297,8 @@ def analyse(results: Path) -> int:
     )
     table(requests, "all")
     table([r for r in requests if r["verified"]], "verified only")
+    for run_id in sorted({r["run_id"] for r in requests}):
+        table([r for r in requests if r["run_id"] == run_id], f"run {run_id}")
 
     print("\nper request (mean over repeats):")
     for r in requests:
@@ -304,15 +332,21 @@ def main(argv: list[str] | None = None) -> int:
     run_parser.add_argument(
         "--run", action="append", default=[], help="only this run id (repeatable)"
     )
+    run_parser.add_argument(
+        "--results", type=Path, default=RESULTS, help=f"default {RESULTS.name}"
+    )
     analyse_parser = sub.add_parser("analyse", help="compare JEV's answers with codes")
-    for each in (run_parser, analyse_parser):
-        each.add_argument(
-            "--results", type=Path, default=RESULTS, help=f"default {RESULTS.name}"
-        )
+    analyse_parser.add_argument(
+        "--results",
+        type=Path,
+        action="append",
+        default=[],
+        help=f"repeatable; default {RESULTS.name}",
+    )
     args = parser.parse_args(argv)
     if args.command == "run":
         return run(args.repeats, args.limit, args.run, args.results)
-    return analyse(args.results)
+    return analyse(args.results or [RESULTS])
 
 
 if __name__ == "__main__":

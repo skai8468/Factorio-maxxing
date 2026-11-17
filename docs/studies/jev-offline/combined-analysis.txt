@@ -1,0 +1,163 @@
+calls: 225, requests: 75, repeats: 3
+latency: median 0.50 s, max 1.39 s; input tokens per call ~3430
+repeat spread per question: median 0.010, max 0.090
+
+all: 75 requests - 49 E10, 26 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                  49/49         23/26  (E08@79, E08@99, E08@119, E01@39, E02@59, E04@39, E03@79, E04@179, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E02@59, E04@79, E02@99, E02@119, E02@139, E02@159)
+  making_progress >= 0.7                  48/49         19/26  (E08@79, E01@39, E02@59, E04@39, E03@79, E04@179, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E04@79, E02@119, E02@139, E02@159)
+  making_progress >= 0.8                  43/49         15/26  (E08@79, E01@39, E02@59, E03@79, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E02@119, E02@159)
+  making_progress >= 0.9                  29/49         4/26  (E02@59, E04@19, E08@119, E04@19)
+  gate: progress >= 0.9 and stuck <= 0.1  23/49         0/26
+  stuck <= 0.1                            35/49         3/26  (E03@79, E02@219, E08@99)
+  stuck <= 0.3                            48/49         20/26  (E08@119, E01@39, E02@59, E04@39, E03@79, E04@179, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E02@59, E04@79, E02@119, E02@139, E02@159)
+
+verified only: 75 requests - 49 E10, 26 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                  49/49         23/26  (E08@79, E08@99, E08@119, E01@39, E02@59, E04@39, E03@79, E04@179, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E02@59, E04@79, E02@99, E02@119, E02@139, E02@159)
+  making_progress >= 0.7                  48/49         19/26  (E08@79, E01@39, E02@59, E04@39, E03@79, E04@179, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E04@79, E02@119, E02@139, E02@159)
+  making_progress >= 0.8                  43/49         15/26  (E08@79, E01@39, E02@59, E03@79, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E02@119, E02@159)
+  making_progress >= 0.9                  29/49         4/26  (E02@59, E04@19, E08@119, E04@19)
+  gate: progress >= 0.9 and stuck <= 0.1  23/49         0/26
+  stuck <= 0.1                            35/49         3/26  (E03@79, E02@219, E08@99)
+  stuck <= 0.3                            48/49         20/26  (E08@119, E01@39, E02@59, E04@39, E03@79, E04@179, E04@199, E02@219, E04@259, E04@19, E03@59, E04@19, E08@99, E08@119, E04@19, E02@59, E04@79, E02@119, E02@139, E02@159)
+
+run 20261021T162318-3e77267c: 6 requests - 2 E10, 4 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                   2/2          3/4  (E08@79, E08@99, E08@119)
+  making_progress >= 0.7                   2/2          1/4  (E08@79)
+  making_progress >= 0.8                   2/2          1/4  (E08@79)
+  making_progress >= 0.9                   2/2          0/4
+  gate: progress >= 0.9 and stuck <= 0.1   0/2          0/4
+  stuck <= 0.1                             0/2          0/4
+  stuck <= 0.3                             2/2          1/4  (E08@119)
+
+run 20261021T172150-ba5dcf0a: 15 requests - 13 E10, 2 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                  13/13         2/2  (E01@39, E02@59)
+  making_progress >= 0.7                  12/13         2/2  (E01@39, E02@59)
+  making_progress >= 0.8                  11/13         2/2  (E01@39, E02@59)
+  making_progress >= 0.9                   9/13         1/2  (E02@59)
+  gate: progress >= 0.9 and stuck <= 0.1   8/13         0/2
+  stuck <= 0.1                            10/13         0/2
+  stuck <= 0.3                            13/13         2/2  (E01@39, E02@59)
+
+run 20261021T193258-2cd7aa8c: 15 requests - 9 E10, 6 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                   9/9          6/6  (E04@39, E03@79, E04@179, E04@199, E02@219, E04@259)
+  making_progress >= 0.7                   9/9          6/6  (E04@39, E03@79, E04@179, E04@199, E02@219, E04@259)
+  making_progress >= 0.8                   9/9          4/6  (E03@79, E04@199, E02@219, E04@259)
+  making_progress >= 0.9                   3/9          0/6
+  gate: progress >= 0.9 and stuck <= 0.1   2/9          0/6
+  stuck <= 0.1                             6/9          2/6  (E03@79, E02@219)
+  stuck <= 0.3                             9/9          6/6  (E04@39, E03@79, E04@179, E04@199, E02@219, E04@259)
+
+run 20261116T222832-8ef037ca: 15 requests - 12 E10, 3 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                  12/12         2/3  (E04@19, E03@59)
+  making_progress >= 0.7                  12/12         2/3  (E04@19, E03@59)
+  making_progress >= 0.8                   9/12         2/3  (E04@19, E03@59)
+  making_progress >= 0.9                   5/12         0/3
+  gate: progress >= 0.9 and stuck <= 0.1   5/12         0/3
+  stuck <= 0.1                             9/12         0/3
+  stuck <= 0.3                            12/12         2/3  (E04@19, E03@59)
+
+run 20261116T231731-65398af8: 15 requests - 12 E10, 3 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                  12/12         3/3  (E04@19, E08@99, E08@119)
+  making_progress >= 0.7                  12/12         3/3  (E04@19, E08@99, E08@119)
+  making_progress >= 0.8                  11/12         3/3  (E04@19, E08@99, E08@119)
+  making_progress >= 0.9                   9/12         2/3  (E04@19, E08@119)
+  gate: progress >= 0.9 and stuck <= 0.1   7/12         0/3
+  stuck <= 0.1                             9/12         1/3  (E08@99)
+  stuck <= 0.3                            11/12         3/3  (E04@19, E08@99, E08@119)
+
+run 20261117T171047-6a8934eb: 9 requests - 1 E10, 8 real
+  filter rule (skip the human)        E10 filtered   real wrongly filtered
+  making_progress >= 0.5                   1/1          7/8  (E04@19, E02@59, E04@79, E02@99, E02@119, E02@139, E02@159)
+  making_progress >= 0.7                   1/1          5/8  (E04@19, E04@79, E02@119, E02@139, E02@159)
+  making_progress >= 0.8                   1/1          3/8  (E04@19, E02@119, E02@159)
+  making_progress >= 0.9                   1/1          1/8  (E04@19)
+  gate: progress >= 0.9 and stuck <= 0.1   1/1          0/8
+  stuck <= 0.1                             1/1          0/8
+  stuck <= 0.3                             1/1          6/8  (E04@19, E02@59, E04@79, E02@119, E02@139, E02@159)
+
+per request (mean over repeats):
+  3e77267c step  19 E10  progress 0.93  stuck 0.11  env 0.09
+  3e77267c step  39 E10  progress 0.90  stuck 0.24  env 0.07
+  3e77267c step  59 E08  progress 0.33  stuck 0.79  env 0.10
+  3e77267c step  79 E08  progress 0.89  stuck 0.48  env 0.08
+  3e77267c step  99 E08  progress 0.57  stuck 0.73  env 0.09
+  3e77267c step 119 E08  progress 0.67  stuck 0.17  env 0.08
+  ba5dcf0a step  19 E10  progress 0.94  stuck 0.06  env 0.10
+  ba5dcf0a step  39 E01  progress 0.84  stuck 0.29  env 0.05
+  ba5dcf0a step  59 E02  progress 0.92  stuck 0.21  env 0.05
+  ba5dcf0a step  79 E10  progress 0.93  stuck 0.06  env 0.16
+  ba5dcf0a step  99 E10  progress 0.95  stuck 0.04  env 0.09
+  ba5dcf0a step 119 E10  progress 0.90  stuck 0.09  env 0.08
+  ba5dcf0a step 139 E10  progress 0.95  stuck 0.05  env 0.08
+  ba5dcf0a step 159 E10  progress 0.77  stuck 0.09  env 0.13
+  ba5dcf0a step 179 E10  progress 0.93  stuck 0.10  env 0.09
+  ba5dcf0a step 199 E10  progress 0.96  stuck 0.07  env 0.12
+  ba5dcf0a step 219 E10  progress 0.91  stuck 0.05  env 0.15
+  ba5dcf0a step 239 E10  progress 0.96  stuck 0.06  env 0.08
+  ba5dcf0a step 259 E10  progress 0.95  stuck 0.06  env 0.15
+  ba5dcf0a step 279 E10  progress 0.54  stuck 0.11  env 0.17
+  ba5dcf0a step 299 E10  progress 0.83  stuck 0.12  env 0.09
+  2cd7aa8c step  19 E10  progress 0.94  stuck 0.08  env 0.12
+  2cd7aa8c step  39 E04  progress 0.78  stuck 0.21  env 0.05
+  2cd7aa8c step  59 E10  progress 0.93  stuck 0.06  env 0.13
+  2cd7aa8c step  79 E03  progress 0.89  stuck 0.09  env 0.05
+  2cd7aa8c step  99 E10  progress 0.89  stuck 0.07  env 0.14
+  2cd7aa8c step 119 E10  progress 0.89  stuck 0.17  env 0.07
+  2cd7aa8c step 139 E10  progress 0.88  stuck 0.18  env 0.08
+  2cd7aa8c step 159 E10  progress 0.85  stuck 0.09  env 0.07
+  2cd7aa8c step 179 E04  progress 0.79  stuck 0.16  env 0.24
+  2cd7aa8c step 199 E04  progress 0.85  stuck 0.26  env 0.07
+  2cd7aa8c step 219 E02  progress 0.90  stuck 0.09  env 0.09
+  2cd7aa8c step 239 E10  progress 0.81  stuck 0.06  env 0.12
+  2cd7aa8c step 259 E04  progress 0.88  stuck 0.14  env 0.62
+  2cd7aa8c step 279 E10  progress 0.92  stuck 0.13  env 0.23
+  2cd7aa8c step 299 E10  progress 0.89  stuck 0.05  env 0.14
+  8ef037ca step  19 E04  progress 0.84  stuck 0.24  env 0.07
+  8ef037ca step  39 E02  progress 0.37  stuck 0.51  env 0.05
+  8ef037ca step  59 E03  progress 0.89  stuck 0.10  env 0.07
+  8ef037ca step  79 E10  progress 0.71  stuck 0.21  env 0.10
+  8ef037ca step  99 E10  progress 0.91  stuck 0.04  env 0.17
+  8ef037ca step 119 E10  progress 0.93  stuck 0.09  env 0.19
+  8ef037ca step 139 E10  progress 0.73  stuck 0.13  env 0.15
+  8ef037ca step 159 E10  progress 0.80  stuck 0.06  env 0.17
+  8ef037ca step 179 E10  progress 0.88  stuck 0.07  env 0.09
+  8ef037ca step 199 E10  progress 0.93  stuck 0.08  env 0.08
+  8ef037ca step 219 E10  progress 0.93  stuck 0.07  env 0.09
+  8ef037ca step 239 E10  progress 0.79  stuck 0.12  env 0.17
+  8ef037ca step 259 E10  progress 0.86  stuck 0.05  env 0.13
+  8ef037ca step 279 E10  progress 0.88  stuck 0.08  env 0.08
+  8ef037ca step 299 E10  progress 0.91  stuck 0.06  env 0.13
+  65398af8 step  19 E04  progress 0.91  stuck 0.11  env 0.06
+  65398af8 step  39 E10  progress 0.94  stuck 0.04  env 0.11
+  65398af8 step  59 E10  progress 0.92  stuck 0.05  env 0.14
+  65398af8 step  79 E10  progress 0.95  stuck 0.07  env 0.10
+  65398af8 step  99 E08  progress 0.89  stuck 0.08  env 0.06
+  65398af8 step 119 E08  progress 0.91  stuck 0.16  env 0.10
+  65398af8 step 139 E10  progress 0.79  stuck 0.62  env 0.06
+  65398af8 step 159 E10  progress 0.92  stuck 0.16  env 0.07
+  65398af8 step 179 E10  progress 0.95  stuck 0.04  env 0.11
+  65398af8 step 199 E10  progress 0.96  stuck 0.05  env 0.10
+  65398af8 step 219 E10  progress 0.91  stuck 0.11  env 0.09
+  65398af8 step 239 E10  progress 0.95  stuck 0.06  env 0.09
+  65398af8 step 259 E10  progress 0.89  stuck 0.09  env 0.12
+  65398af8 step 279 E10  progress 0.87  stuck 0.05  env 0.12
+  65398af8 step 299 E10  progress 0.94  stuck 0.08  env 0.11
+  6a8934eb step  19 E04  progress 0.91  stuck 0.17  env 0.07
+  6a8934eb step  39 E10  progress 0.95  stuck 0.07  env 0.14
+  6a8934eb step  59 E02  progress 0.69  stuck 0.28  env 0.06
+  6a8934eb step  79 E04  progress 0.74  stuck 0.24  env 0.07
+  6a8934eb step  99 E02  progress 0.56  stuck 0.58  env 0.13
+  6a8934eb step 119 E02  progress 0.81  stuck 0.17  env 0.32
+  6a8934eb step 139 E02  progress 0.72  stuck 0.15  env 0.10
+  6a8934eb step 159 E02  progress 0.83  stuck 0.26  env 0.41
+  6a8934eb step 179 E03  progress 0.43  stuck 0.68  env 0.20
+  (* = draft code, not yet verified)
+
+environment_fault mean: E08 0.08, others 0.12

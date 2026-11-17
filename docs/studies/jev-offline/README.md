@@ -1,7 +1,9 @@
 # Offline study: JEV as a filter for backstop help requests
 
 **Date:** 2026-11-17 · **Script:** `scripts/jev_offline_study.py` · **Raw answers:**
-`results.jsonl` · **Full output:** `analysis.txt`
+`results.jsonl`, `held-out-luna.jsonl`, `held-out-2.jsonl` · **Full output:**
+`analysis.txt`, `held-out-luna-analysis.txt`, `held-out-2-analysis.txt`,
+`combined-analysis.txt` (all 75 requests, scored on the verified codes)
 
 **Status:** exploratory, ahead of E2. Nothing in the harness changed. Before any JEV feature
 is built, the research lead decides whether one goes in (CLAUDE.md: specialized-harness
@@ -89,15 +91,65 @@ E03. Output: `held-out-luna.jsonl`, `held-out-luna-analysis.txt`.
   because Luna writes shorter programs. Repeat spread had a median of 0.010 and a
   maximum of 0.050.
 
+## Second held-out check and the full catalogue (2026-11-17)
+
+Two more runs the study had never seen were put through the same three questions, with
+the same cut-offs and no re-tuning. Output: `held-out-2.jsonl`, `held-out-2-analysis.txt`.
+- **The new-wording Haiku run** `20261116T231731-65398af8`: 12 E10, 2 E08, 1 E04.
+- **The GPT 6 Astra run** `20261117T171047-6a8934eb`: 1 E10 and 8 real problems (5 E02,
+  2 E04, 1 E03). This is the hard case for a filter. Astra kept building throughout,
+  so its real problems happen while the factory is growing.
+
+By then the research lead had verified every code (D74), including the 30 drafts the
+earlier sections used, with no corrections. `analyse` now reads codes from the current
+annotations, so `combined-analysis.txt` scores all 75 requests on verified codes.
+
+| Skip the human when... | New Haiku | Astra | All 75 requests |
+|---|---|---|---|
+| `making_progress >= 0.8` | 11/12 E10, **3/3 real** | 1/1, **3/8 real** | 43/49, 15/26 real |
+| `making_progress >= 0.9` | 9/12, **2/3 real** | 1/1, **1/8 real** | 29/49, 4/26 real |
+| **gate: `making_progress >= 0.9` and `stuck <= 0.1`** | **7/12, 0/3** | **1/1, 0/8** | **23/49, 0/26** |
+| `stuck <= 0.1` | 9/12, **1/3 real** (E08) | 1/1, 0/8 | 35/49, 3/26 real |
+
+Each cell gives the E10s filtered, then the real problems wrongly filtered.
+
+- **The gate held on every run.** Across all 75 requests it would have skipped the
+  human for 23 of 49 false alarms (47%) and for none of the 26 real problems. That is
+  31% fewer help requests overall. On the three held-out runs alone, it skipped 13 of 25
+  false alarms and none of 14 real problems.
+- **Each question alone fails on unseen data.** `making_progress >= 0.9` let through
+  the first real problem of both new runs (E04 at step 19 of each) and one E08.
+  `stuck <= 0.1` let through an E08. The two-question gate is what kept the error
+  count at zero.
+- **Astra shows why progress alone is unsafe.** With `making_progress >= 0.8`, 3 of its
+  8 real problems would have been skipped. A capable agent that builds while it fails
+  looks like progress. `stuck` is what separates the two, as it did for Haiku.
+- **The margin is still thin.** The closest real problems to the gate:
+
+  | Request | Code | `making_progress` | `stuck` | Why it was kept |
+  |---|---|---|---|---|
+  | New Haiku, step 19 | E04 | 0.91 | 0.107 | missed `stuck` by 0.007 |
+  | Luna, step 59 | E03 | 0.89 | 0.10 | missed `making_progress` |
+  | Astra, step 19 | E04 | 0.91 | 0.17 | `stuck` too high |
+
+  The cut-offs should not be loosened, and a live feature should log every near miss.
+- **`environment_fault` is still uninformative.** Its mean is 0.08 on E08 and 0.12 on
+  everything else. Its highest values (0.3-0.4) were Astra's blocked placements (E02),
+  not environment faults.
+- **Cost and stability are unchanged.** Calls had a median latency of 0.5 s and a
+  maximum of 1.4 s. The repeat spread had a median of 0.010. Astra's long programs are
+  cut to 1,500 characters each, so its requests averaged about 3,900 input tokens.
+
 ## Limits
 
-- **Small and narrow.** 36 requests and 12 real problems, all from one model (Haiku 5.5),
-  one cell and one trigger (the backstop). Repeated-error requests and other models are
-  untested.
-- **Thresholds chosen in-sample.** The cut-offs were read off the Haiku data. The Luna
-  held-out check (above) is the first test on unseen data, and it has only 3 real
-  problems. The new-wording Haiku run is the next test, once it is coded.
-- **15 labels are drafts.** Both misses under `stuck <= 0.1` are on unverified codes.
+- **Still small.** 75 requests and 26 real problems, from three models (Haiku 5.5, Luna,
+  Astra) and one trigger (the backstop). No request came from the repeated-error
+  detector, so that path is untested. Sol is untested.
+- **Thresholds chosen in-sample.** The cut-offs were read off the first 36 Haiku
+  requests. Three held-out runs (39 requests, 14 real problems) have since passed
+  without re-tuning.
+- **All labels are now verified** (2026-11-17). The earlier sections' tables were
+  computed while 30 of them were drafts; no code changed on verification.
 - **Same information as the coder.** Codes were drafted from the ~5 steps before each
   request, which is close to what JEV saw. Agreement may be higher than against an
   independent coder.
